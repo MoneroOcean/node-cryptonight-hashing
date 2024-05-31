@@ -1,14 +1,14 @@
 {
     "name": "cryptonight-hashing",
-    "version": "29.0.2",
+    "version": "29.0.3",
     "author": {
         "name": "Multiple",
         "email": "Check The Git Repo"
     },
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/AdminXeq/node-cryptonight-hashing.git"
-    },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tuskeNetwork/node-cryptonight-hashing.git"
+  },
     "dependencies": {
         "bindings": "*",
         "nan": "^2.14.2",

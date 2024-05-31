@@ -34,6 +34,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "crypto/randomx/vm_compiled.hpp"
 #include "crypto/randomx/vm_compiled_light.hpp"
 #include "crypto/randomx/blake2/blake2.h"
+#include "crypto/randomx/sha256/sha256.h"
 
 #if defined(_M_X64) || defined(__x86_64__)
 #include "crypto/randomx/jit_compiler_x86_static.hpp"
@@ -140,6 +141,13 @@ RandomX_ConfigurationGraft::RandomX_ConfigurationGraft()
   ProgramSize = 280;
   RANDOMX_FREQ_IROR_R = 7;
   RANDOMX_FREQ_IROL_R = 3;
+}
+
+RandomX_ConfigurationTuske::RandomX_ConfigurationTuske()
+{
+	ArgonSalt = "TuskeRandomX\x03";
+	ArgonIterations = 4;
+	ArgonLanes = 2;
 }
 
 RandomX_ConfigurationBase::RandomX_ConfigurationBase()
@@ -409,6 +417,7 @@ RandomX_ConfigurationSafex RandomX_SafexConfig;
 RandomX_ConfigurationKeva RandomX_KevaConfig;
 RandomX_ConfigurationScala RandomX_ScalaConfig;
 RandomX_ConfigurationGraft RandomX_GraftConfig;
+RandomX_ConfigurationTuske RandomX_TuskeConfig;
 
 alignas(64) RandomX_ConfigurationBase RandomX_CurrentConfig;
 
@@ -665,6 +674,9 @@ extern "C" {
 		    default: rx_blake2b_wrapper::run(tempHash, sizeof(tempHash), nextInput, nextInputSize);
 		}
 		machine->hashAndFill(output, tempHash);
+		switch (algo) {
+		case xmrig::Algorithm::RX_TUSKE:   SHA256d_Buf(output, RANDOMX_HASH_SIZE, reinterpret_cast<uint8_t*>(output));; break;
+		}
 	}
 
 }

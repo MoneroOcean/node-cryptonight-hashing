@@ -127,6 +127,9 @@ void init_rx(const uint8_t* seed_hash_data, xmrig::Algorithm::Id algo) {
         case xmrig::Algorithm::RX_XLA:
             randomx_apply_config(RandomX_ScalaConfig);
             break;
+        case xmrig::Algorithm::RX_TUSKE:
+            randomx_apply_config(RandomX_TuskeConfig);
+            break;
         default:
             throw std::domain_error("Unknown RandomX algo");
     }
@@ -205,6 +208,7 @@ NAN_METHOD(randomx) {
         case 19: xalgo = xmrig::Algorithm::RX_KEVA; break;
         case 20: xalgo = xmrig::Algorithm::RX_GRAFT; break;
         case 22: xalgo = xmrig::Algorithm::RX_XEQ; break;
+        case 23: xalgo = xmrig::Algorithm::RX_TUSKE; break;
         default: xalgo = xmrig::Algorithm::RX_0;
     }
 
