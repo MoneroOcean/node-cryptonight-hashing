@@ -24,6 +24,7 @@
                 "c29i.cc",
                 "c29s.cc",
                 "c29v.cc",
+		"c29.cc",
                 "xmrig/crypto/cn/c_blake256.c",
                 "xmrig/crypto/cn/c_groestl.c",
                 "xmrig/crypto/cn/c_jh.c",

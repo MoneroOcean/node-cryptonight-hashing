@@ -48,12 +48,12 @@ static uint64_t sipblock(siphash_keys *keys, const uint32_t edge,uint64_t  *buf)
 	return buf[edge & EDGE_BLOCK_MASK];
 }
 
-int c29s_verify(uint32_t edges[PROOFSIZEs], siphash_keys *keys) {
+int c29s_verify(uint32_t edges[PROOFSIZE], siphash_keys *keys) {
 	uint32_t xor0 = 0, xor1 = 0;
 	uint64_t sips[EDGE_BLOCK_SIZE];
-	uint32_t uvs[2*PROOFSIZEs];
+	uint32_t uvs[2*PROOFSIZE];
 
-	for (uint32_t n = 0; n < PROOFSIZEs; n++) {
+	for (uint32_t n = 0; n < PROOFSIZE; n++) {
 		if (edges[n] > EDGEMASK)
 			return POW_TOO_BIG;
 		if (n && edges[n] <= edges[n-1])
@@ -66,7 +66,7 @@ int c29s_verify(uint32_t edges[PROOFSIZEs], siphash_keys *keys) {
 		return POW_NON_MATCHING;
 	uint32_t n = 0, i = 0, j;
 	do {                        // follow cycle
-		for (uint32_t k = j = i; (k = (k+2) % (2*PROOFSIZEs)) != i; ) {
+		for (uint32_t k = j = i; (k = (k+2) % (2*PROOFSIZE)) != i; ) {
 			if (uvs[k] == uvs[i]) { // find other edge endpoint identical to one at i
 				if (j != i)           // already found one before
 					return POW_BRANCH;
@@ -77,5 +77,5 @@ int c29s_verify(uint32_t edges[PROOFSIZEs], siphash_keys *keys) {
 		i = j^1;
 		n++;
 	} while (i != 0);           // must cycle back to start or we would have found branch
-	return n == PROOFSIZEs ? POW_OK : POW_SHORT_CYCLE;
+	return n == PROOFSIZE ? POW_OK : POW_SHORT_CYCLE;
 }

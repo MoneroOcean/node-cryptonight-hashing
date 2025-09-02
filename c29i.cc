@@ -1,4 +1,4 @@
-#include "c29.h"  
+#include "c29.h"
 
 // Cuck(at)oo Cycle, a memory-hard proof-of-work
 // Copyright (c) 2013-2019 John Tromp

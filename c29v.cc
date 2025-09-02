@@ -1,4 +1,4 @@
-#include "c29.h"  
+#include "c29.h"
 
 // Cuck(at)oo Cycle, a memory-hard proof-of-work
 // Copyright (c) 2013-2019 John Tromp
@@ -51,15 +51,15 @@ static uint64_t sipblock(siphash_keys *keys, const uint32_t edge,uint64_t  *buf)
 	return buf[edge & EDGE_BLOCK_MASK];
 }
 
-int c29v_verify(uint32_t edges[PROOFSIZE], siphash_keys *keys) {
+int c29v_verify(uint32_t edges[PROOFSIZEv], siphash_keys *keys) {
   uint32_t xor0 = 0, xor1 = 0;
   uint64_t sips[EDGE_BLOCK_SIZE];
-  uint32_t uvs[2*PROOFSIZE];
+  uint32_t uvs[2*PROOFSIZEv];
   uint32_t ndir[2] = { 0, 0 };
 
-  for (uint32_t n = 0; n < PROOFSIZE; n++) {
+  for (uint32_t n = 0; n < PROOFSIZEv; n++) {
     uint32_t dir = edges[n] & 1;
-    if (ndir[dir] >= PROOFSIZE / 2)
+    if (ndir[dir] >= PROOFSIZEv / 2)
       return POW_UNBALANCED;
     if (edges[n] >= NEDGES2)
       return POW_TOO_BIG;
@@ -74,7 +74,7 @@ int c29v_verify(uint32_t edges[PROOFSIZE], siphash_keys *keys) {
     return POW_NON_MATCHING;
   uint32_t n = 0, i = 0, j;
   do {                        // follow cycle
-    for (uint32_t k = ((j = i) % 4) ^ 2; k < 2*PROOFSIZE; k += 4) {
+    for (uint32_t k = ((j = i) % 4) ^ 2; k < 2*PROOFSIZEv; k += 4) {
       if (uvs[k] == uvs[i]) { // find reverse direction edge endpoint identical to one at i
         if (j != i)           // already found one before
           return POW_BRANCH;
@@ -85,5 +85,5 @@ int c29v_verify(uint32_t edges[PROOFSIZE], siphash_keys *keys) {
     i = j^1;
     n++;
   } while (i != 0);           // must cycle back to start or we would have found branch
-  return n == PROOFSIZE ? POW_OK : POW_SHORT_CYCLE;
+  return n == PROOFSIZEv ? POW_OK : POW_SHORT_CYCLE;
 }
