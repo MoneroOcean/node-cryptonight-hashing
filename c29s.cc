@@ -48,7 +48,7 @@ static uint64_t sipblock(siphash_keys *keys, const uint32_t edge,uint64_t  *buf)
 	return buf[edge & EDGE_BLOCK_MASK];
 }
 
-int c29s_verify(uint32_t edges[PROOFSIZEs], siphash_keys *keys) {
+int c29_verify(uint32_t edges[PROOFSIZEs], siphash_keys *keys) {
 	uint32_t xor0 = 0, xor1 = 0;
 	uint64_t sips[EDGE_BLOCK_SIZE];
 	uint32_t uvs[2*PROOFSIZEs];
