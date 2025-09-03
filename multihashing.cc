@@ -587,8 +587,8 @@ NAN_METHOD(c29_cycle_hash) {
 
         Local<Array> ring = Local<Array>::Cast(info[0]);
 
-        uint8_t hashdata[PROOFSIZE*EDGEBITS/8];
-        memset(hashdata, 0, PROOFSIZE*EDGEBITS/8);
+        uint8_t hashdata[PROOFSIZE*EDGEBITS/8+1];
+        memset(hashdata, 0, PROOFSIZE*EDGEBITS/8+1);
 
         int bytepos = 0;
         int bitpos = 0;
