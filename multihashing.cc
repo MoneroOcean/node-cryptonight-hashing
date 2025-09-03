@@ -581,8 +581,31 @@ NAN_METHOD(c29b) {
 	info.GetReturnValue().Set(Nan::New<Number>(retval));
 }
 
-
 NAN_METHOD(c29_cycle_hash) {
+        if (info.Length() != 1) return THROW_ERROR_EXCEPTION("You must provide 1 argument: packed edge buffer");
+
+	v8::Isolate *isolate = v8::Isolate::GetCurrent();
+        Local<Object> target = info[0]->ToObject(isolate->GetCurrentContext()).ToLocalChecked();
+        if (!Buffer::HasInstance(target)) return THROW_ERROR_EXCEPTION("Argument 1 should be a buffer object.");
+
+        char * input = Buffer::Data(info[0]);
+        uint32_t input_len = Buffer::Length(info[0]);
+
+	if (!input_len) return THROW_ERROR_EXCEPTION("Argument 1 should be a non empty buffer object.");
+
+        unsigned char cyclehash[32];
+        rx_blake2b((void *)cyclehash, sizeof(cyclehash), (uint8_t *)input, sizeof(input_len));
+
+        unsigned char rev_cyclehash[32];
+        for(int i = 0; i < 32; i++)
+                rev_cyclehash[i] = cyclehash[31-i];
+
+        v8::Local<v8::Value> returnValue = Nan::CopyBuffer((char*)rev_cyclehash, 32).ToLocalChecked();
+        info.GetReturnValue().Set(returnValue);
+}
+
+
+NAN_METHOD(c29_packed_edges) {
         if (info.Length() != 1) return THROW_ERROR_EXCEPTION("You must provide 1 argument:ring");
 
         Local<Array> ring = Local<Array>::Cast(info[0]);
@@ -608,19 +631,12 @@ NAN_METHOD(c29_cycle_hash) {
                 }
         }
 
-        unsigned char cyclehash[32];
-        rx_blake2b((void *)cyclehash, sizeof(cyclehash), (uint8_t *)hashdata, sizeof(hashdata));
-
-        unsigned char rev_cyclehash[32];
-        for(int i = 0; i < 32; i++)
-                rev_cyclehash[i] = cyclehash[31-i];
-
-        v8::Local<v8::Value> returnValue = Nan::CopyBuffer((char*)rev_cyclehash, 32).ToLocalChecked();
+        v8::Local<v8::Value> returnValue = Nan::CopyBuffer((char*)hashdata, sizeof(hashdata)).ToLocalChecked();
         info.GetReturnValue().Set(returnValue);
 }
 
 
-NAN_METHOD(c29s_cycle_hash) {
+NAN_METHOD(c29s_packed_edges) {
 	if (info.Length() != 1) return THROW_ERROR_EXCEPTION("You must provide 1 argument:ring");
 
 	Local<Array> ring = Local<Array>::Cast(info[0]);
@@ -646,18 +662,11 @@ NAN_METHOD(c29s_cycle_hash) {
 		}
 	}
 
-	unsigned char cyclehash[32];
-	rx_blake2b((void *)cyclehash, sizeof(cyclehash), (uint8_t *)hashdata, sizeof(hashdata));
-
-	unsigned char rev_cyclehash[32];
-	for(int i = 0; i < 32; i++)
-		rev_cyclehash[i] = cyclehash[31-i];
-
-	v8::Local<v8::Value> returnValue = Nan::CopyBuffer((char*)rev_cyclehash, 32).ToLocalChecked();
-	info.GetReturnValue().Set(returnValue);
+        v8::Local<v8::Value> returnValue = Nan::CopyBuffer((char*)hashdata, sizeof(hashdata)).ToLocalChecked();
+        info.GetReturnValue().Set(returnValue);
 }
 
-NAN_METHOD(c29v_cycle_hash) {
+NAN_METHOD(c29v_packed_edges) {
         if (info.Length() != 1) return THROW_ERROR_EXCEPTION("You must provide 1 argument:ring");
 
         Local<Array> ring = Local<Array>::Cast(info[0]);
@@ -683,18 +692,11 @@ NAN_METHOD(c29v_cycle_hash) {
                 }
         }
 
-        unsigned char cyclehash[32];
-        rx_blake2b((void *)cyclehash, sizeof(cyclehash), (uint8_t *)hashdata, sizeof(hashdata));
-
-        unsigned char rev_cyclehash[32];
-        for(int i = 0; i < 32; i++)
-                rev_cyclehash[i] = cyclehash[31-i];
-
-        v8::Local<v8::Value> returnValue = Nan::CopyBuffer((char*)rev_cyclehash, 32).ToLocalChecked();
+        v8::Local<v8::Value> returnValue = Nan::CopyBuffer((char*)hashdata, sizeof(hashdata)).ToLocalChecked();
         info.GetReturnValue().Set(returnValue);
 }
 
-NAN_METHOD(c29b_cycle_hash) {
+NAN_METHOD(c29b_packed_edges) {
 	if (info.Length() != 1) return THROW_ERROR_EXCEPTION("You must provide 1 argument:ring");
 
 	Local<Array> ring = Local<Array>::Cast(info[0]);
@@ -720,18 +722,11 @@ NAN_METHOD(c29b_cycle_hash) {
 		}
 	}
 
-	unsigned char cyclehash[32];
-	rx_blake2b((void *)cyclehash, sizeof(cyclehash), (uint8_t *)hashdata, sizeof(hashdata));
-
-	unsigned char rev_cyclehash[32];
-	for(int i = 0; i < 32; i++)
-		rev_cyclehash[i] = cyclehash[31-i];
-
-	v8::Local<v8::Value> returnValue = Nan::CopyBuffer((char*)rev_cyclehash, 32).ToLocalChecked();
-	info.GetReturnValue().Set(returnValue);
+        v8::Local<v8::Value> returnValue = Nan::CopyBuffer((char*)hashdata, sizeof(hashdata)).ToLocalChecked();
+        info.GetReturnValue().Set(returnValue);
 }
 
-NAN_METHOD(c29i_cycle_hash) {
+NAN_METHOD(c29i_packed_edges) {
 	if (info.Length() != 1) return THROW_ERROR_EXCEPTION("You must provide 1 argument:ring");
 
 	Local<Array> ring = Local<Array>::Cast(info[0]);
@@ -757,15 +752,8 @@ NAN_METHOD(c29i_cycle_hash) {
 		}
 	}
 
-	unsigned char cyclehash[32];
-	rx_blake2b((void *)cyclehash, sizeof(cyclehash), (uint8_t *)hashdata, sizeof(hashdata));
-
-	unsigned char rev_cyclehash[32];
-	for(int i = 0; i < 32; i++)
-		rev_cyclehash[i] = cyclehash[31-i];
-
-	v8::Local<v8::Value> returnValue = Nan::CopyBuffer((char*)rev_cyclehash, 32).ToLocalChecked();
-	info.GetReturnValue().Set(returnValue);
+        v8::Local<v8::Value> returnValue = Nan::CopyBuffer((char*)hashdata, sizeof(hashdata)).ToLocalChecked();
+        info.GetReturnValue().Set(returnValue);
 }
 
 NAN_METHOD(kawpow) {
@@ -888,10 +876,11 @@ NAN_MODULE_INIT(init) {
     Nan::Set(target, Nan::New("c29b").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29b)).ToLocalChecked());
     Nan::Set(target, Nan::New("c29i").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29i)).ToLocalChecked());
     Nan::Set(target, Nan::New("c29_cycle_hash").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29_cycle_hash)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29s_cycle_hash").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29s_cycle_hash)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29v_cycle_hash").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29v_cycle_hash)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29b_cycle_hash").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29b_cycle_hash)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29i_cycle_hash").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29i_cycle_hash)).ToLocalChecked());
+    Nan::Set(target, Nan::New("c29_packed_edges").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29_packed_edges)).ToLocalChecked());
+    Nan::Set(target, Nan::New("c29s_packed_edges").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29s_packed_edges)).ToLocalChecked());
+    Nan::Set(target, Nan::New("c29v_packed_edges").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29v_packed_edges)).ToLocalChecked());
+    Nan::Set(target, Nan::New("c29b_packed_edges").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29b_packed_edges)).ToLocalChecked());
+    Nan::Set(target, Nan::New("c29i_packed_edges").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29i_packed_edges)).ToLocalChecked());
     Nan::Set(target, Nan::New("kawpow").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(kawpow)).ToLocalChecked());
     Nan::Set(target, Nan::New("ethash").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(ethash)).ToLocalChecked());
     Nan::Set(target, Nan::New("etchash").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(etchash)).ToLocalChecked());
