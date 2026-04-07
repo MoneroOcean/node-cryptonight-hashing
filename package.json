@@ -1,29 +1,38 @@
 {
-    "name": "cryptonight-hashing",
-    "version": "29.1.1",
-    "author": {
-        "name": "Multiple",
-        "email": "Check The Git Repo"
-    },
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/AdminXeq/node-cryptonight-hashing.git"
-    },
-    "dependencies": {
-        "bindings": "*",
-        "nan": "^2.14.2",
-        "bigint-buffer": "^1.1.5",
-        "blake2": "^4.0.2",
-        "uint64be": "^3.0.0"
-    },
-    "keywords": [
-        "cryptonight",
-        "randomx",
-        "cuckaroo29",
-        "argon2",
-        "astrobwt",
-        "KangarooTwelve",
-        "monero",
-        "kawpow"
-    ]
+  "name": "cryptonight-hashing",
+  "version": "29.1.1",
+  "description": "Native Node.js bindings for CryptoNight, RandomX, KawPow, AstroBWT, Argon2, and related hashing algorithms.",
+  "main": "index.js",
+  "gypfile": true,
+  "author": {
+    "name": "Multiple",
+    "email": "Check The Git Repo"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AdminXeq/node-cryptonight-hashing.git"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node tests/stability.js",
+    "test:perf": "node tests/perf.js",
+    "test:all": "bash tests/run.sh"
+  },
+  "dependencies": {
+    "bindings": "^1.5.0",
+    "blake2": "^5.0.1",
+    "nan": "^2.26.2"
+  },
+  "keywords": [
+    "cryptonight",
+    "randomx",
+    "cuckaroo29",
+    "argon2",
+    "astrobwt",
+    "KangarooTwelve",
+    "monero",
+    "kawpow"
+  ]
 }
