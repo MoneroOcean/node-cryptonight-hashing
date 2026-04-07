@@ -1,12 +1,10 @@
 module.exports = require('bindings')('cryptonight-hashing.node');
 
-const blake2 = require('blake2');
+const uint64be     = require('uint64be');
+const blake2       = require('blake2');
+const BigIntBuffer = require('bigint-buffer');
 
-const M = Buffer.concat(Array.from({ length: 1024 }, (_, i) => {
-  const buffer = Buffer.allocUnsafe(8);
-  buffer.writeBigUInt64BE(BigInt(i));
-  return buffer;
-}));
+const M = Buffer.concat(Array(1024).fill().map((_, i) => uint64be.encode(i)));
 
 const NBase                  = BigInt(Math.pow(2, 26));
 const IncreaseStart          = 600 * 1024;
@@ -30,29 +28,9 @@ const N = height => {
 }
 
 function blake2b(seed) {
-  const h = blake2.createHash('blake2b', { digestLength: 32 });
+  const h = blake2.createHash('blake2b', {digestLength: 32});
   h.update(seed);
   return h.digest();
-}
-
-function toBigIntBE(buffer) {
-  let value = 0n;
-  for (const byte of buffer) {
-    value = (value << 8n) | BigInt(byte);
-  }
-  return value;
-}
-
-function toBufferBE(value, width) {
-  let result = value;
-  const buffer = Buffer.alloc(width);
-
-  for (let i = width - 1; i >= 0; i -= 1) {
-    buffer[i] = Number(result & 0xffn);
-    result >>= 8n;
-  }
-
-  return buffer;
 }
 
 function genIndexes(seed, height) {
@@ -76,12 +54,12 @@ function genIndexes(seed, height) {
 // const coinbaseBuffer = serializeCoinbase(extraNonce1Buffer, extraNonce2Buffer);
 
 module.exports.autolykos2_hashes = function(coinbaseBuffer, height) {
-  const h = toBufferBE(BigInt(height), 4);
-  const i = toBufferBE(toBigIntBE(blake2b(coinbaseBuffer).slice(24, 32)) % N(height), 4);
+  const h = BigIntBuffer.toBufferBE(BigInt(height), 4);
+  const i = BigIntBuffer.toBufferBE(BigIntBuffer.toBigIntBE(blake2b(coinbaseBuffer).slice(24, 32)) % N(height), 4);
   const e = blake2b(Buffer.concat([i, h, M])).slice(1, 32);
-  const J = genIndexes(Buffer.concat([e, coinbaseBuffer]), height).map(item => toBufferBE(BigInt(item), 4));
-  const f = J.map(item => toBigIntBE(blake2b(Buffer.concat([item, h, M])).slice(1, 32))).reduce((a, b) => a + b);
-  const hash = toBufferBE(f, 32);
+  const J = genIndexes(Buffer.concat([e, coinbaseBuffer]), height).map(item => BigIntBuffer.toBufferBE(BigInt(item), 4));
+  const f = J.map(item => BigIntBuffer.toBigIntBE(blake2b(Buffer.concat([item, h, M])).slice(1, 32))).reduce((a, b) => a + b);
+  const hash = BigIntBuffer.toBufferBE(f, 32);
 
   return [ hash, blake2b(hash) ];
 };
