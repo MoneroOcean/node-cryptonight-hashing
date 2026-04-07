@@ -3,9 +3,6 @@
   "version": "29.1.4",
   "description": "Native Node.js bindings for CryptoNight, RandomX, KawPow, AstroBWT, Argon2, and related hashing algorithms.",
   "main": "index.js",
-  "exports": {
-    ".": "./index.js"
-  },
   "gypfile": true,
   "files": [
     "index.js",
