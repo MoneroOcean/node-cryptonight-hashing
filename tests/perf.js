@@ -1,8 +1,9 @@
 "use strict";
 
+const assert = require("node:assert/strict");
+const { spawnSync } = require("child_process");
+const path = require("path");
 const multiHashing = require("..");
-
-const includeOptional = process.argv.includes("--all");
 
 function measureRate(iterations, fn) {
   const start = process.hrtime.bigint();
@@ -18,11 +19,14 @@ function benchmark(name, iterations, run, warmup) {
   return {
     name,
     iterations,
-    run: () => {
+    measure: () => {
       if (typeof warmup === "function") {
         warmup();
       }
 
+      return measureRate(iterations, run);
+    },
+    run: () => {
       console.log(`${name}: ${measureRate(iterations, run)}`);
     },
   };
@@ -332,7 +336,35 @@ const optionalBenches = baseOptionalBenches.concat(
   baseDefaultBenches.filter((bench) => legacyBenchNames.has(bench.name))
 );
 
+function getBenches(includeOptional = false) {
+  return includeOptional ? defaultBenches.concat(optionalBenches) : defaultBenches;
+}
+
+function runRequestedBench(requestedBenchName) {
+  const bench = defaultBenches.concat(optionalBenches).find((entry) => entry.name === requestedBenchName);
+  if (!bench) {
+    throw new Error(`Unknown benchmark: ${requestedBenchName}`);
+  }
+
+  console.log(`${bench.name}: ${bench.measure()}`);
+}
+
+function runBenchmarks(includeOptional = false) {
+  const benches = getBenches(includeOptional);
+
+  for (const bench of benches) {
+    console.log(`${bench.name}: ${bench.measure()}`);
+  }
+
+  if (!includeOptional && optionalBenches.length > 0) {
+    console.log(
+      `Skipped ${optionalBenches.length} legacy-only perf cases. Run 'node tests/perf.js --all' to include them.`
+    );
+  }
+}
+
 function main() {
+  const includeOptional = process.argv.includes("--all");
   const benches = includeOptional ? defaultBenches.concat(optionalBenches) : defaultBenches;
 
   for (const bench of benches) {
@@ -346,4 +378,66 @@ function main() {
   }
 }
 
-main();
+function isNodeTestInvocation() {
+  return (
+    Boolean(process.env.NODE_TEST_CONTEXT) ||
+    process.execArgv.includes("--test") ||
+    process.execArgv.some((arg) => arg.startsWith("--test-"))
+  );
+}
+
+function registerNodeTests() {
+  const test = require("node:test");
+
+  for (const bench of defaultBenches) {
+    test(bench.name, () => {
+      const result = spawnSync(process.execPath, [__filename, "--case", bench.name], {
+        cwd: path.join(__dirname, ".."),
+        env: { ...process.env, NODE_TEST_CONTEXT: "" },
+        stdio: "inherit",
+      });
+
+      assert.equal(
+        result.status,
+        0,
+        result.signal
+          ? `Benchmark exited due to signal ${result.signal}`
+          : `Benchmark exited with code ${result.status}`
+      );
+    });
+  }
+
+  if (optionalBenches.length > 0) {
+    test("legacy-only perf coverage note", () => {
+      console.log(
+        `Skipped ${optionalBenches.length} legacy-only perf cases. Run 'node tests/perf.js --all' to include them.`
+      );
+    });
+  }
+}
+
+module.exports = {
+  defaultBenches,
+  optionalBenches,
+  getBenches,
+  runRequestedBench,
+  runBenchmarks,
+};
+
+if (isNodeTestInvocation() && !process.argv.includes("--case")) {
+  registerNodeTests();
+} else if (require.main === module) {
+  const benchIndex = process.argv.indexOf("--case");
+  const requestedBenchName = benchIndex === -1 ? null : process.argv[benchIndex + 1];
+
+  if (requestedBenchName) {
+    try {
+      runRequestedBench(requestedBenchName);
+    } catch (error) {
+      console.error(error.message);
+      process.exit(1);
+    }
+  } else {
+    main();
+  }
+}

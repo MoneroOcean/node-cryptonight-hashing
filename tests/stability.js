@@ -1,14 +1,11 @@
 "use strict";
 
+const assert = require("node:assert/strict");
 const { spawnSync } = require("child_process");
 const fs = require("fs/promises");
 const path = require("path");
 
 const multiHashing = require("..");
-
-const includeOptional = process.argv.includes("--all");
-const caseIndex = process.argv.indexOf("--case");
-const requestedCaseId = caseIndex === -1 ? null : process.argv[caseIndex + 1];
 
 function fixturePath(file) {
   return path.join(__dirname, file);
@@ -61,7 +58,8 @@ function getMethod(methodName) {
   return method;
 }
 
-async function runVectorCase({ name, file, parseLine, execute, formatActual }) {
+async function runVectorCase({ name, file, parseLine, execute, formatActual }, options = {}) {
+  const { quiet = false } = options;
   const lines = await readLines(file);
   let passed = 0;
   let failed = 0;
@@ -83,10 +81,13 @@ async function runVectorCase({ name, file, parseLine, execute, formatActual }) {
     throw new Error(`${failed}/${passed + failed} tests failed on: ${name}`);
   }
 
-  console.log(`${passed} tests passed on: ${name}`);
+  if (!quiet) {
+    console.log(`${passed} tests passed on: ${name}`);
+  }
 }
 
-async function runCheckCase({ name, checks }) {
+async function runCheckCase({ name, checks }, options = {}) {
+  const { quiet = false } = options;
   let passed = 0;
   let failed = 0;
 
@@ -104,7 +105,9 @@ async function runCheckCase({ name, checks }) {
     throw new Error(`${failed}/${passed + failed} tests failed on: ${name}`);
   }
 
-  console.log(`${passed} tests passed on: ${name}`);
+  if (!quiet) {
+    console.log(`${passed} tests passed on: ${name}`);
+  }
 }
 
 function toHex(value) {
@@ -118,14 +121,14 @@ function toHex(value) {
 function vectorCase(definition) {
   return {
     ...definition,
-    run: () => runVectorCase(definition),
+    run: (options) => runVectorCase(definition, options),
   };
 }
 
 function checkCase(definition) {
   return {
     ...definition,
-    run: () => runCheckCase(definition),
+    run: (options) => runCheckCase(definition, options),
   };
 }
 
@@ -839,7 +842,7 @@ const optionalCases = baseOptionalCases.concat(
 );
 const allCases = activeCases.concat(optionalCases);
 
-async function runRequestedCase() {
+async function runRequestedCase(requestedCaseId) {
   const testCase = allCases.find((entry) => entry.id === requestedCaseId);
   if (!testCase) {
     throw new Error(`Unknown case: ${requestedCaseId}`);
@@ -848,7 +851,7 @@ async function runRequestedCase() {
   await testCase.run();
 }
 
-function runDriver() {
+function runDriver(includeOptional = false) {
   const cases = includeOptional ? allCases : activeCases;
   let failures = 0;
 
@@ -874,11 +877,57 @@ function runDriver() {
   }
 }
 
-if (requestedCaseId) {
-  runRequestedCase().catch((error) => {
-    console.error(error.message);
-    process.exit(1);
-  });
-} else {
-  runDriver();
+function isNodeTestInvocation() {
+  return (
+    Boolean(process.env.NODE_TEST_CONTEXT) ||
+    process.execArgv.includes("--test") ||
+    process.execArgv.some((arg) => arg.startsWith("--test-"))
+  );
+}
+
+function registerNodeTests() {
+  const test = require("node:test");
+
+  for (const testCase of activeCases) {
+    test(testCase.name, () => {
+      const result = spawnSync(process.execPath, [__filename, "--case", testCase.id], {
+        cwd: path.join(__dirname, ".."),
+        env: { ...process.env, NODE_TEST_CONTEXT: "" },
+        stdio: "inherit",
+      });
+
+      assert.equal(
+        result.status,
+        0,
+        result.signal
+          ? `Test case exited due to signal ${result.signal}`
+          : `Test case exited with code ${result.status}`
+      );
+    });
+  }
+}
+
+module.exports = {
+  activeCases,
+  optionalCases,
+  allCases,
+  runRequestedCase,
+  runDriver,
+};
+
+if (isNodeTestInvocation() && !process.argv.includes("--case")) {
+  registerNodeTests();
+} else if (require.main === module) {
+  const includeOptional = process.argv.includes("--all");
+  const caseIndex = process.argv.indexOf("--case");
+  const requestedCaseId = caseIndex === -1 ? null : process.argv[caseIndex + 1];
+
+  if (requestedCaseId) {
+    runRequestedCase(requestedCaseId).catch((error) => {
+      console.error(error.message);
+      process.exit(1);
+    });
+  } else {
+    runDriver(includeOptional);
+  }
 }
