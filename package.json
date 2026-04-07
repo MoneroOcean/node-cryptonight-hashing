@@ -6,6 +6,7 @@
   "gypfile": true,
   "files": [
     "index.js",
+    "check_cpu.sh",
     "binding.gyp",
     "README.md",
     "*.cc",
