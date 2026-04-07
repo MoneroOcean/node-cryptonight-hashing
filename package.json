@@ -40,8 +40,9 @@
     "test:all": "node --test --test-concurrency=1 --test-reporter=spec tests/stability.js tests/perf.js"
   },
   "dependencies": {
-    "blake2": "^5.0.1",
-    "nan": "^2.26.2"
+    "bindings": "1.5.0",
+    "blake2": "5.0.1",
+    "nan": "2.26.2"
   },
   "keywords": [
     "cryptonight",

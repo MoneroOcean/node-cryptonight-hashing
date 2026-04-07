@@ -1,18 +1,6 @@
+const nativeBinding = require("bindings")("cryptonight-hashing.node");
 const blake2 = require("blake2");
 
-function loadNativeBinding() {
-  try {
-    return require("./build/Release/cryptonight-hashing.node");
-  } catch (releaseError) {
-    try {
-      return require("./build/Debug/cryptonight-hashing.node");
-    } catch {
-      throw releaseError;
-    }
-  }
-}
-
-const nativeBinding = loadNativeBinding();
 module.exports = nativeBinding;
 
 function bigIntToBufferBE(value, width) {
