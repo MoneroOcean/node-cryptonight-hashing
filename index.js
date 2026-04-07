@@ -1,10 +1,54 @@
-module.exports = require('bindings')('cryptonight-hashing.node');
+const blake2 = require("blake2");
 
-const uint64be     = require('uint64be');
-const blake2       = require('blake2');
-const BigIntBuffer = require('bigint-buffer');
+function loadNativeBinding() {
+  try {
+    return require("./build/Release/cryptonight-hashing.node");
+  } catch (releaseError) {
+    try {
+      return require("./build/Debug/cryptonight-hashing.node");
+    } catch {
+      throw releaseError;
+    }
+  }
+}
 
-const M = Buffer.concat(Array(1024).fill().map((_, i) => uint64be.encode(i)));
+const nativeBinding = loadNativeBinding();
+module.exports = nativeBinding;
+
+function bigIntToBufferBE(value, width) {
+  if (typeof value !== "bigint") {
+    throw new TypeError("value must be a bigint");
+  }
+
+  const buffer = Buffer.alloc(width);
+  let remaining = value;
+
+  for (let offset = width - 1; offset >= 0; offset -= 1) {
+    buffer[offset] = Number(remaining & 0xffn);
+    remaining >>= 8n;
+  }
+
+  if (remaining !== 0n) {
+    throw new RangeError("value does not fit in the requested width");
+  }
+
+  return buffer;
+}
+
+function bufferToBigIntBE(buffer) {
+  let value = 0n;
+
+  for (const byte of buffer) {
+    value = (value << 8n) | BigInt(byte);
+  }
+
+  return value;
+}
+
+const M = Buffer.alloc(1024 * 8);
+for (let i = 0; i < 1024; i += 1) {
+  M.writeBigUInt64BE(BigInt(i), i * 8);
+}
 
 const NBase                  = BigInt(Math.pow(2, 26));
 const IncreaseStart          = 600 * 1024;
@@ -28,7 +72,7 @@ const N = height => {
 }
 
 function blake2b(seed) {
-  const h = blake2.createHash('blake2b', {digestLength: 32});
+  const h = blake2.createHash("blake2b", { digestLength: 32 });
   h.update(seed);
   return h.digest();
 }
@@ -54,12 +98,12 @@ function genIndexes(seed, height) {
 // const coinbaseBuffer = serializeCoinbase(extraNonce1Buffer, extraNonce2Buffer);
 
 module.exports.autolykos2_hashes = function(coinbaseBuffer, height) {
-  const h = BigIntBuffer.toBufferBE(BigInt(height), 4);
-  const i = BigIntBuffer.toBufferBE(BigIntBuffer.toBigIntBE(blake2b(coinbaseBuffer).slice(24, 32)) % N(height), 4);
+  const h = bigIntToBufferBE(BigInt(height), 4);
+  const i = bigIntToBufferBE(bufferToBigIntBE(blake2b(coinbaseBuffer).slice(24, 32)) % N(height), 4);
   const e = blake2b(Buffer.concat([i, h, M])).slice(1, 32);
-  const J = genIndexes(Buffer.concat([e, coinbaseBuffer]), height).map(item => BigIntBuffer.toBufferBE(BigInt(item), 4));
-  const f = J.map(item => BigIntBuffer.toBigIntBE(blake2b(Buffer.concat([item, h, M])).slice(1, 32))).reduce((a, b) => a + b);
-  const hash = BigIntBuffer.toBufferBE(f, 32);
+  const J = genIndexes(Buffer.concat([e, coinbaseBuffer]), height).map(item => bigIntToBufferBE(BigInt(item), 4));
+  const f = J.map(item => bufferToBigIntBE(blake2b(Buffer.concat([item, h, M])).slice(1, 32))).reduce((a, b) => a + b);
+  const hash = bigIntToBufferBE(f, 32);
 
   return [ hash, blake2b(hash) ];
 };

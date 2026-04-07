@@ -3,7 +3,21 @@
   "version": "29.1.4",
   "description": "Native Node.js bindings for CryptoNight, RandomX, KawPow, AstroBWT, Argon2, and related hashing algorithms.",
   "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
   "gypfile": true,
+  "files": [
+    "index.js",
+    "binding.gyp",
+    "README.md",
+    "*.cc",
+    "*.h",
+    "c29/**",
+    "xmrig/**",
+    "xmrig-override/**"
+  ],
+  "sideEffects": false,
   "author": {
     "name": "Multiple",
     "email": "Check The Git Repo"
@@ -21,11 +35,8 @@
     "test:all": "node --test --test-concurrency=1 --test-reporter=spec tests/stability.js tests/perf.js"
   },
   "dependencies": {
-    "bindings": "^1.5.0",
-    "bigint-buffer": "^1.1.5",
     "blake2": "^5.0.1",
-    "nan": "^2.26.2",
-    "uint64be": "^3.0.0"
+    "nan": "^2.26.2"
   },
   "keywords": [
     "cryptonight",
