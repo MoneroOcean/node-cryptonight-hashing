@@ -38,6 +38,31 @@ extern "C" {
 
 #include "c29.h"
 
+#undef NAN_METHOD
+#define NAN_METHOD(name) void name(const v8::FunctionCallbackInfo<v8::Value>& info)
+
+namespace {
+
+inline v8::Local<v8::String> NewString(v8::Isolate* isolate, const char* value) {
+    return v8::String::NewFromUtf8(isolate, value).ToLocalChecked();
+}
+
+inline void SetExport(v8::Isolate* isolate, v8::Local<v8::Object> target,
+                      const char* name, v8::FunctionCallback callback) {
+    target->Set(
+        isolate->GetCurrentContext(),
+        NewString(isolate, name),
+        v8::Function::New(isolate->GetCurrentContext(), callback).ToLocalChecked()
+    ).Check();
+}
+
+inline void SetArrayValue(v8::Isolate* isolate, v8::Local<v8::Array> target,
+                          uint32_t index, v8::Local<v8::Value> value) {
+    target->Set(isolate->GetCurrentContext(), index, value).Check();
+}
+
+}  // namespace
+
 #if (defined(__AES__) && (__AES__ == 1)) || (defined(__ARM_FEATURE_CRYPTO) && (__ARM_FEATURE_CRYPTO == 1))
   #define SOFT_AES false
   #if defined(CPU_INTEL)
@@ -173,9 +198,9 @@ void callback(char* data, void* hint) {
     free(data);
 }
 
-using namespace node;
 using namespace v8;
 using namespace Nan;
+namespace Buffer = node::Buffer;
 
 NAN_METHOD(randomx) {
     if (info.Length() < 2) return THROW_ERROR_EXCEPTION("You must provide two arguments.");
@@ -816,9 +841,9 @@ NAN_METHOD(ethash) {
         }
         ethash_return_value_t res = ethash_light_compute(cache, header_hash, nonce);
 
-        v8::Local<v8::Array> returnValue = New<v8::Array>(2);
-        Nan::Set(returnValue, 0, Nan::CopyBuffer((char*)&res.result.b[0], 32).ToLocalChecked());
-        Nan::Set(returnValue, 1, Nan::CopyBuffer((char*)&res.mix_hash.b[0], 32).ToLocalChecked());
+        v8::Local<v8::Array> returnValue = v8::Array::New(isolate, 2);
+        SetArrayValue(isolate, returnValue, 0, Nan::CopyBuffer((char*)&res.result.b[0], 32).ToLocalChecked());
+        SetArrayValue(isolate, returnValue, 1, Nan::CopyBuffer((char*)&res.mix_hash.b[0], 32).ToLocalChecked());
 	info.GetReturnValue().Set(returnValue);
 }
 
@@ -854,36 +879,38 @@ NAN_METHOD(etchash) {
         }
         ethash_return_value_t res = ethash_light_compute(cache, header_hash, nonce);
 
-        v8::Local<v8::Array> returnValue = New<v8::Array>(2);
-        Nan::Set(returnValue, 0, Nan::CopyBuffer((char*)&res.result.b[0], 32).ToLocalChecked());
-        Nan::Set(returnValue, 1, Nan::CopyBuffer((char*)&res.mix_hash.b[0], 32).ToLocalChecked());
+        v8::Local<v8::Array> returnValue = v8::Array::New(isolate, 2);
+        SetArrayValue(isolate, returnValue, 0, Nan::CopyBuffer((char*)&res.result.b[0], 32).ToLocalChecked());
+        SetArrayValue(isolate, returnValue, 1, Nan::CopyBuffer((char*)&res.mix_hash.b[0], 32).ToLocalChecked());
 	info.GetReturnValue().Set(returnValue);
 }
 
 
-NAN_MODULE_INIT(init) {
-    Nan::Set(target, Nan::New("cryptonight").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(cryptonight)).ToLocalChecked());
-    Nan::Set(target, Nan::New("cryptonight_light").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(cryptonight_light)).ToLocalChecked());
-    Nan::Set(target, Nan::New("cryptonight_heavy").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(cryptonight_heavy)).ToLocalChecked());
-    Nan::Set(target, Nan::New("cryptonight_pico").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(cryptonight_pico)).ToLocalChecked());
-    Nan::Set(target, Nan::New("randomx").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(randomx)).ToLocalChecked());
-    Nan::Set(target, Nan::New("argon2").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(argon2)).ToLocalChecked());
-    Nan::Set(target, Nan::New("astrobwt").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(astrobwt)).ToLocalChecked());
-    Nan::Set(target, Nan::New("k12").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(k12)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29s").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29s)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29v").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29v)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29b").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29b)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29i").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29i)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29_cycle_hash").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29_cycle_hash)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29_packed_edges").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29_packed_edges)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29s_packed_edges").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29s_packed_edges)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29v_packed_edges").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29v_packed_edges)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29b_packed_edges").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29b_packed_edges)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29i_packed_edges").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29i_packed_edges)).ToLocalChecked());
-    Nan::Set(target, Nan::New("kawpow").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(kawpow)).ToLocalChecked());
-    Nan::Set(target, Nan::New("ethash").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(ethash)).ToLocalChecked());
-    Nan::Set(target, Nan::New("etchash").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(etchash)).ToLocalChecked());
+void init(v8::Local<v8::Object> exports, v8::Local<v8::Value>,
+          v8::Local<v8::Context> context, void*) {
+    v8::Isolate* isolate = context->GetIsolate();
+    SetExport(isolate, exports, "cryptonight", cryptonight);
+    SetExport(isolate, exports, "cryptonight_light", cryptonight_light);
+    SetExport(isolate, exports, "cryptonight_heavy", cryptonight_heavy);
+    SetExport(isolate, exports, "cryptonight_pico", cryptonight_pico);
+    SetExport(isolate, exports, "randomx", randomx);
+    SetExport(isolate, exports, "argon2", argon2);
+    SetExport(isolate, exports, "astrobwt", astrobwt);
+    SetExport(isolate, exports, "k12", k12);
+    SetExport(isolate, exports, "c29", c29);
+    SetExport(isolate, exports, "c29s", c29s);
+    SetExport(isolate, exports, "c29v", c29v);
+    SetExport(isolate, exports, "c29b", c29b);
+    SetExport(isolate, exports, "c29i", c29i);
+    SetExport(isolate, exports, "c29_cycle_hash", c29_cycle_hash);
+    SetExport(isolate, exports, "c29_packed_edges", c29_packed_edges);
+    SetExport(isolate, exports, "c29s_packed_edges", c29s_packed_edges);
+    SetExport(isolate, exports, "c29v_packed_edges", c29v_packed_edges);
+    SetExport(isolate, exports, "c29b_packed_edges", c29b_packed_edges);
+    SetExport(isolate, exports, "c29i_packed_edges", c29i_packed_edges);
+    SetExport(isolate, exports, "kawpow", kawpow);
+    SetExport(isolate, exports, "ethash", ethash);
+    SetExport(isolate, exports, "etchash", etchash);
 }
 
-NODE_MODULE(cryptonight, init)
+NODE_MODULE_CONTEXT_AWARE(cryptonight, init)
