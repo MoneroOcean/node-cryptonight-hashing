@@ -1,6 +1,6 @@
 {
   "name": "node-pow-hashing",
-  "version": "29.1.5",
+  "version": "29.1.6",
   "description": "Native Node.js bindings for proof-of-work hashing families including CryptoNight, RandomX, KawPow, Ethash, Cuckaroo29, and more.",
   "main": "index.js",
   "exports": {

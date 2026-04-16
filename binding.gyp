@@ -166,7 +166,7 @@
             ],
             "cflags_cc": [
                 '<!@(./check_cpu.sh intel && echo -DCPU_INTEL || (./check_cpu.sh amd && (./check_cpu.sh amdnew && echo -DCPU_AMD || echo -DCPU_AMD_OLD) || echo))',
-                "-std=gnu++17 -s -fPIC -DNDEBUG -Ofast -fno-fast-math -fexceptions -fno-rtti -Wno-class-memaccess -w"
+                "-std=gnu++20 -s -fPIC -DNDEBUG -Ofast -fno-fast-math -fexceptions -fno-rtti -Wno-class-memaccess -w"
             ],
             'cflags!': [ '-fexceptions' ]
         }
