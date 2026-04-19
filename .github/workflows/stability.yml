@@ -23,22 +23,32 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             node: 18
+          - os: ubuntu-24.04
+            node: 24
           - os: ubuntu-latest
-            node: 22
+            node: system
+          - os: ubuntu-latest
+            node: 24
           - os: macos-latest
-            node: 22
+            node: system
+          - os: macos-latest
+            node: 24
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
       - name: Setup Node.js
+        if: matrix.node != 'system'
         uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
           package-manager-cache: false
+
+      - name: Show Node.js version
+        run: node -v
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund --no-package-lock
