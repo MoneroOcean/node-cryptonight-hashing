@@ -28,6 +28,14 @@
 #include <sys/mman.h>
 
 
+#if defined(__APPLE__) && !defined(XMRIG_OS_APPLE)
+#   define XMRIG_OS_APPLE
+#endif
+
+#if defined(__APPLE__) && !defined(XMRIG_OS_MACOS)
+#   define XMRIG_OS_MACOS
+#endif
+
 #ifdef XMRIG_OS_APPLE
 #   include <libkern/OSCacheControl.h>
 #   include <mach/vm_statistics.h>

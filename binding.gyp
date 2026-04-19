@@ -4,6 +4,10 @@
             "target_name": "cryptonight-hashing",
              'conditions': [
                 ['OS=="mac"', {
+                  'defines': [
+                    'XMRIG_OS_APPLE',
+                    'XMRIG_OS_MACOS'
+                  ],
                   'xcode_settings': {
                     'GCC_ENABLE_CPP_EXCEPTIONS': 'YES'
                   }
