@@ -1,12 +1,14 @@
-# node-cryptonight-hashing Native Node.js proof-of-work hashing bindings for CryptoNight, RandomX, KawPow, Ethash, C29, and related MoneroOcean-style pool tooling.
+# node-pow-hashing
 
-[![Stability](https://img.shields.io/github/actions/workflow/status/MoneroOcean/node-cryptonight-hashing/stability.yml?branch=master&label=stability)](https://github.com/MoneroOcean/node-cryptonight-hashing/actions/workflows/stability.yml)
+Native Node.js proof-of-work hashing bindings for MoneroOcean-style pool tooling.
+
+[![Stability](https://img.shields.io/github/actions/workflow/status/MoneroOcean/node-pow-hashing/stability.yml?branch=master&label=stability)](https://github.com/MoneroOcean/node-pow-hashing/actions/workflows/stability.yml)
 ![Node 18+](https://img.shields.io/badge/node-18%2B-green)
 ![Linux and macOS](https://img.shields.io/badge/platform-linux%20%7C%20macOS-blue)
 ![Native addon](https://img.shields.io/badge/build-native%20addon-6f42c1)
 
 ## Overview
-`cryptonight-hashing` is a native addon for Node.js that exposes fast hashing helpers for CryptoNight variants, RandomX, KawPow, Ethash, Etchash, Cuckaroo29, Autolykos2, Ghostrider, Flex, Argon2, AstroBWT, and KangarooTwelve.
+`node-pow-hashing` is a native addon for Node.js that exposes fast hashing helpers for CryptoNight variants, RandomX, KawPow, Ethash, Etchash, Cuckaroo29, Autolykos2, Ghostrider, Flex, Argon2, AstroBWT, and KangarooTwelve.
 
 It is meant for pool backends, miner-facing APIs, and other Node.js services that need deterministic PoW hashing without shelling out to an external binary.
 
@@ -14,7 +16,7 @@ It is meant for pool backends, miner-facing APIs, and other Node.js services tha
 From GitHub:
 
 ```bash
-npm install https://github.com/MoneroOcean/node-cryptonight-hashing
+npm install https://github.com/MoneroOcean/node-pow-hashing
 ```
 
 For local development:
@@ -33,7 +35,7 @@ npm test
 
 ## Quick Start
 ```js
-const hashing = require("cryptonight-hashing");
+const hashing = require("node-pow-hashing");
 
 const input = Buffer.from("This is a test");
 const cn = hashing.cryptonight(input);

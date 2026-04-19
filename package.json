@@ -1,7 +1,7 @@
 {
-  "name": "cryptonight-hashing",
+  "name": "node-pow-hashing",
   "version": "29.1.5",
-  "description": "Native Node.js bindings for CryptoNight, RandomX, KawPow, AstroBWT, Argon2, and related hashing algorithms.",
+  "description": "Native Node.js bindings for proof-of-work hashing families including CryptoNight, RandomX, KawPow, Ethash, Cuckaroo29, and more.",
   "main": "index.js",
   "exports": {
     ".": "./index.js"
@@ -25,9 +25,9 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/MoneroOcean/node-cryptonight-hashing.git"
+    "url": "https://github.com/MoneroOcean/node-pow-hashing.git"
   },
-  "homepage": "https://github.com/MoneroOcean/node-cryptonight-hashing#readme",
+  "homepage": "https://github.com/MoneroOcean/node-pow-hashing#readme",
   "engines": {
     "node": ">=18"
   },
@@ -46,6 +46,8 @@
     "nan": "2.26.2"
   },
   "keywords": [
+    "pow",
+    "hashing",
     "cryptonight",
     "randomx",
     "cuckaroo29",

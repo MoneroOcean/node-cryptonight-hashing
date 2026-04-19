@@ -221,11 +221,11 @@ NAN_METHOD(randomx) {
     info.GetReturnValue().Set(returnValue);
 }
 
-void ghostrider(const unsigned char* data, long unsigned int size, unsigned char* output, cryptonight_ctx** ctx, long unsigned int) {
+void ghostrider(const unsigned char* data, size_t size, unsigned char* output, cryptonight_ctx** ctx, uint64_t) {
     xmrig::ghostrider::hash(data, size, output, ctx, nullptr);
 }
 
-void flex(const unsigned char* data, long unsigned int size, unsigned char* output, cryptonight_ctx** ctx, long unsigned int) {
+void flex(const unsigned char* data, size_t size, unsigned char* output, cryptonight_ctx** ctx, uint64_t) {
     hard_coded_eb = 6;
     flex_hash((const char*)data, (char*)output, ctx);
     hard_coded_eb = 1;

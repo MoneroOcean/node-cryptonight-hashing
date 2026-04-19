@@ -1,18 +1,23 @@
 
 set -e
 QUERY="$1"
+ARCH="$(uname -m)"
+
+is_arm64() {
+    [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]
+}
 
 check_mac() {
     case "$1" in
-      avx) sysctl -n machdep.cpu.features | grep -i avx >/dev/null;;
-      avx2) sysctl -n machdep.cpu.features | grep -i avx2 >/dev/null;;
-      amd) sysctl -n machdep.cpu.vendor | grep -i amd >/dev/null;;
-      amdnew) sysctl -n machdep.cpu.vendor | grep -i amd && test `sysctl -n machdep.cpu.family` -ge 23;;
-      intel) sysctl -n machdep.cpu.vendor | grep -i intel >/dev/null;;
-      sse2) sysctl -n machdep.cpu.features | grep -i sse2 >/dev/null;;
-      ssse3) sysctl -n machdep.cpu.features | grep -i ssse3 >/dev/null;;
-      avx512f) sysctl -n machdep.cpu.features | grep -i avx512f >/dev/null;;
-      xop) sysctl -n machdep.cpu.features | grep -i xop >/dev/null;;
+      avx) is_arm64 && return 1; sysctl -n machdep.cpu.features 2>/dev/null | grep -i avx >/dev/null;;
+      avx2) is_arm64 && return 1; sysctl -n machdep.cpu.features 2>/dev/null | grep -i avx2 >/dev/null;;
+      amd) is_arm64 && return 1; sysctl -n machdep.cpu.vendor 2>/dev/null | grep -i amd >/dev/null;;
+      amdnew) is_arm64 && return 1; sysctl -n machdep.cpu.vendor 2>/dev/null | grep -i amd >/dev/null && test "$(sysctl -n machdep.cpu.family 2>/dev/null)" -ge 23;;
+      intel) is_arm64 && return 1; sysctl -n machdep.cpu.vendor 2>/dev/null | grep -i intel >/dev/null;;
+      sse2) is_arm64 && return 1; sysctl -n machdep.cpu.features 2>/dev/null | grep -i sse2 >/dev/null;;
+      ssse3) is_arm64 && return 1; sysctl -n machdep.cpu.features 2>/dev/null | grep -i ssse3 >/dev/null;;
+      avx512f) is_arm64 && return 1; sysctl -n machdep.cpu.features 2>/dev/null | grep -i avx512f >/dev/null;;
+      xop) is_arm64 && return 1; sysctl -n machdep.cpu.features 2>/dev/null | grep -i xop >/dev/null;;
       *) echo "UNRECOGNISED CHECK $QUERY"; exit 1; ;;
     esac
 }
@@ -32,7 +37,7 @@ check_linux() {
     esac
 }
 
-case "$(uname -a)" in
-  Darwin*) check_mac "$QUERY" ;;
+case "$(uname -s)" in
+  Darwin) check_mac "$QUERY" ;;
   *) check_linux "$QUERY" ;;
 esac
