@@ -30,7 +30,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#if defined _MSC_VER || defined XMRIG_ARM || defined __INTEL_COMPILER
+#if defined _MSC_VER || defined XMRIG_ARM || defined(__aarch64__) || defined(__arm64__) || defined(__ARM_ARCH) || defined __INTEL_COMPILER
 #   define ABI_ATTRIBUTE
 #else
 #   define ABI_ATTRIBUTE __attribute__((ms_abi))
