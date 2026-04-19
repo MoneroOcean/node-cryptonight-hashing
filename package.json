@@ -1,7 +1,7 @@
 {
-  "name": "node-pow-hashing",
-  "version": "29.1.6",
-  "description": "Native Node.js bindings for proof-of-work hashing families including CryptoNight, RandomX, KawPow, Ethash, Cuckaroo29, and more.",
+  "name": "node-powhash",
+  "version": "29.1.7",
+  "description": "Native Node.js addon for proof-of-work hashing algorithms used by mining pools and backend services, including CryptoNight, RandomX, KawPow, Ethash, Ghostrider, and Cuckaroo29.",
   "main": "index.js",
   "exports": {
     ".": "./index.js"
@@ -19,15 +19,16 @@
     "xmrig-override/**"
   ],
   "sideEffects": false,
-  "author": {
-    "name": "Multiple",
-    "email": "Check The Git Repo"
-  },
+  "author": "MoneroOcean contributors",
+  "license": "GPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "https://github.com/MoneroOcean/node-pow-hashing.git"
+    "url": "https://github.com/MoneroOcean/node-powhash.git"
   },
-  "homepage": "https://github.com/MoneroOcean/node-pow-hashing#readme",
+  "homepage": "https://github.com/MoneroOcean/node-powhash#readme",
+  "bugs": {
+    "url": "https://github.com/MoneroOcean/node-powhash/issues"
+  },
   "engines": {
     "node": ">=18"
   },
@@ -46,15 +47,28 @@
     "nan": "2.26.2"
   },
   "keywords": [
+    "proof-of-work",
     "pow",
+    "pow-hash",
     "hashing",
+    "mining",
+    "mining-pool",
+    "stratum",
+    "node-addon",
+    "native-addon",
     "cryptonight",
     "randomx",
+    "ghostrider",
+    "ethash",
+    "etchash",
+    "autolykos2",
+    "c29",
     "cuckaroo29",
     "argon2",
     "astrobwt",
-    "KangarooTwelve",
+    "kangarootwelve",
     "monero",
+    "moneroocean",
     "kawpow"
   ]
 }

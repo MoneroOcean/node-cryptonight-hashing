@@ -1,7 +1,7 @@
 {
     "targets": [
         {
-            "target_name": "cryptonight-hashing",
+            "target_name": "node-powhash",
              'conditions': [
                 ['OS=="mac"', {
                   'defines': [

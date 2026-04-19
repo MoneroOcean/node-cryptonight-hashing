@@ -1,4 +1,4 @@
-const nativeBinding = require("bindings")("cryptonight-hashing.node");
+const nativeBinding = require("bindings")("node-powhash.node");
 const blake2 = require("blake2");
 
 module.exports = nativeBinding;
