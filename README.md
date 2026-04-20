@@ -1,11 +1,17 @@
+<div align="center">
+
 # node-powhash
 
 Native Node.js proof-of-work hashing bindings for MoneroOcean-style pool tooling.
 
-[![Stability](https://img.shields.io/github/actions/workflow/status/MoneroOcean/node-powhash/stability.yml?branch=master&label=stability)](https://github.com/MoneroOcean/node-powhash/actions/workflows/stability.yml)
-![Node 18+](https://img.shields.io/badge/node-18%2B-green)
-![Linux and macOS](https://img.shields.io/badge/platform-linux%20%7C%20macOS-blue)
-![Native addon](https://img.shields.io/badge/build-native%20addon-6f42c1)
+<p>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-111111.svg" alt="GPL-3.0-or-later"></a>
+  <img src="https://img.shields.io/badge/node-%3E%3D18-111111.svg" alt="Node 18+">
+  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-111111.svg" alt="Linux and macOS">
+  <img src="https://img.shields.io/badge/focus-PoW%20hashing-111111.svg" alt="PoW hashing">
+</p>
+
+</div>
 
 ## Overview
 `node-powhash` is a native addon for Node.js that exposes fast hashing helpers for CryptoNight variants, RandomX, KawPow, Ethash, Etchash, Cuckaroo29, Autolykos2, Ghostrider, Flex, Argon2, AstroBWT, and KangarooTwelve.
