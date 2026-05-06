@@ -46,7 +46,9 @@ public:
         ARCH_ZEN,
         ARCH_ZEN_PLUS,
         ARCH_ZEN2,
-        ARCH_ZEN3
+        ARCH_ZEN3,
+        ARCH_ZEN4,
+        ARCH_ZEN5
     };
 
     enum MsrMod : uint32_t {

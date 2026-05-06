@@ -3,6 +3,48 @@ const blake2 = require("blake2");
 
 module.exports = nativeBinding;
 
+const nativeRandomx = nativeBinding.randomx.bind(nativeBinding);
+const nativeSetRandomxCacheSize = typeof nativeBinding.setRandomxCacheSize === "function"
+  ? nativeBinding.setRandomxCacheSize.bind(nativeBinding)
+  : null;
+const RANDOMX_ALGO_NAMES = new Map([
+  ["rx/0", 0],
+  ["rx/2", "rx/2"],
+  ["rx/arq", 2],
+  ["rx/xla", 3],
+  ["defyx", 3],
+  ["panthera", 3],
+  ["rx/wow", 17],
+  ["rx/keva", 19],
+  ["rx/graft", 20],
+  ["rx/xeq", 22]
+]);
+
+let randomxCacheSize = 5;
+
+module.exports.setRandomxCacheSize = function(size) {
+  if (!Number.isInteger(size) || size < 1 || size > 256) {
+    throw new RangeError("RandomX cache size must be an integer between 1 and 256");
+  }
+  randomxCacheSize = size;
+  if (nativeSetRandomxCacheSize) nativeSetRandomxCacheSize(size);
+};
+
+module.exports.getRandomxCacheSize = function() {
+  return randomxCacheSize;
+};
+
+module.exports.randomx = function(data, seedHash, algo = 0) {
+  let resolved = algo;
+  if (typeof algo === "string") {
+    if (!RANDOMX_ALGO_NAMES.has(algo)) {
+      throw new Error(`Unsupported RandomX algo: ${algo}`);
+    }
+    resolved = RANDOMX_ALGO_NAMES.get(algo);
+  }
+  return nativeRandomx(data, seedHash, resolved);
+};
+
 function bigIntToBufferBE(value, width) {
   if (typeof value !== "bigint") {
     throw new TypeError("value must be a bigint");

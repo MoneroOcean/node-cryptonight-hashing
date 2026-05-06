@@ -84,6 +84,7 @@ public:
         CN_GR_5         = 0x63120105,   // "cn/turtle-lite"   GhostRider
         GHOSTRIDER_RTM  = 0x6c150000,   // "ghostrider"       GhostRider
         RX_0            = 0x72151200,   // "rx/0"             RandomX (reference configuration).
+        RX_V2           = 0x72151202,   // "rx/2"             RandomX (Monero v2).
         RX_WOW          = 0x72141177,   // "rx/wow"           RandomWOW (Wownero).
         RX_ARQ          = 0x72121061,   // "rx/arq"           RandomARQ (Arqma).
         RX_XEQ          = 0x72121000,

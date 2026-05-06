@@ -17,9 +17,11 @@
                     'XMRIG_ARM=8'
                   ],
                   'cflags_c': [
+                    '-march=armv8-a+crypto',
                     '-flax-vector-conversions'
                   ],
                   'cflags_cc': [
+                    '-march=armv8-a+crypto',
                     '-flax-vector-conversions'
                   ]
                 }],
@@ -93,6 +95,8 @@
                 "xmrig/crypto/randomx/virtual_machine.cpp",
                 "xmrig/crypto/randomx/vm_compiled_light.cpp",
                 "xmrig/crypto/randomx/blake2/blake2b.c",
+                '<!@(uname -m | grep "^x86_64$" >/dev/null && echo "xmrig/crypto/randomx/blake2/blake2b_sse41.c" || echo)',
+                '<!@(uname -m | grep "^x86_64$" >/dev/null && echo "xmrig/crypto/randomx/blake2/avx2/blake2b_avx2.c" || echo)',
                 '<!@(uname -m | grep "^x86_64$" >/dev/null && echo "xmrig/crypto/randomx/jit_compiler_x86_static.S" || echo)',
                 '<!@(uname -m | grep "^x86_64$" >/dev/null && echo "xmrig/crypto/randomx/jit_compiler_x86.cpp" || echo)',
                 '<!@(uname -m | grep -E "^(arm64|aarch64)$" >/dev/null && echo "xmrig/crypto/randomx/jit_compiler_a64_static.S" || echo)',
@@ -163,6 +167,9 @@
                 '<!@(./check_cpu.sh avx512f && echo -DHAVE_AVX512F || echo)',
                 '<!@(./check_cpu.sh xop && echo -DHAVE_XOP || echo)',
                 "-std=gnu11      -fPIC -DNDEBUG -Ofast -fno-fast-math -w"
+            ],
+            "asflags": [
+                "-fPIC"
             ],
             "cflags_cc": [
                 '<!@(./check_cpu.sh intel && echo -DCPU_INTEL || (./check_cpu.sh amd && (./check_cpu.sh amdnew && echo -DCPU_AMD || echo -DCPU_AMD_OLD) || echo))',

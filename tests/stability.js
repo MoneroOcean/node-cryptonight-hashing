@@ -1,7 +1,6 @@
 "use strict";
 
-const assert = require("node:assert/strict");
-const { spawnSync } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 const fs = require("fs/promises");
 const path = require("path");
 
@@ -59,7 +58,6 @@ function getMethod(methodName) {
 }
 
 async function runVectorCase({ name, file, parseLine, execute, formatActual }, options = {}) {
-  const { quiet = false } = options;
   const lines = await readLines(file);
   let passed = 0;
   let failed = 0;
@@ -80,14 +78,9 @@ async function runVectorCase({ name, file, parseLine, execute, formatActual }, o
   if (failed > 0) {
     throw new Error(`${failed}/${passed + failed} tests failed on: ${name}`);
   }
-
-  if (!quiet) {
-    console.log(`${passed} tests passed on: ${name}`);
-  }
 }
 
 async function runCheckCase({ name, checks }, options = {}) {
-  const { quiet = false } = options;
   let passed = 0;
   let failed = 0;
 
@@ -103,10 +96,6 @@ async function runCheckCase({ name, checks }, options = {}) {
 
   if (failed > 0) {
     throw new Error(`${failed}/${passed + failed} tests failed on: ${name}`);
-  }
-
-  if (!quiet) {
-    console.log(`${passed} tests passed on: ${name}`);
   }
 }
 
@@ -493,6 +482,26 @@ const baseActiveCases = [
     execute: ({ input, seed }) => multiHashing.randomx(Buffer.from(input), Buffer.from(seed), 0).toString("hex"),
     formatActual: ({ seed, input }, actual) => `${seed} '${input}': ${actual}`,
   }),
+  checkCase({
+    id: "rx-2",
+    name: "rx/2",
+    checks: [
+      {
+        expected: "329a16176b038502ba70e2350e61809227f247dacab444591ea2c21a9745b0fa",
+        actual: () =>
+          multiHashing
+            .randomx(Buffer.from("This is a test"), Buffer.from("12345678901234567890123456789012"), "rx/2")
+            .toString("hex"),
+      },
+      {
+        expected: "3debd156210ca7b1eefb2e22c657ec68fa7d9859466cc809213788d741b33a02",
+        actual: () =>
+          multiHashing
+            .randomx(Buffer.from("00", "hex"), Buffer.from("12345678901234567890123456789012"), "rx/2")
+            .toString("hex"),
+      },
+    ],
+  }),
   vectorCase({
     id: "rx-xeq",
     name: "rx/xeq",
@@ -613,7 +622,7 @@ const baseOptionalCases = [
     name: "rx/defyx",
     checks: [
       {
-        expected: "b7a974208efe1759adbb7d160f5b76e850f226265a00cf07b78d8c8c4d55b8bd",
+        expected: "239c17fc48c27a4e7254cfb7be3f9ac69f0ec9c6eb55e20cc7696d64bee7a694",
         actual: () =>
           multiHashing
             .randomx(
@@ -623,6 +632,20 @@ const baseOptionalCases = [
                 "hex"
               ),
               1
+            )
+            .toString("hex"),
+      },
+      {
+        expected: "239c17fc48c27a4e7254cfb7be3f9ac69f0ec9c6eb55e20cc7696d64bee7a694",
+        actual: () =>
+          multiHashing
+            .randomx(
+              Buffer.from("This is a test"),
+              Buffer.from(
+                "1000000000000000000000000000000000000000000000000000000000000000",
+                "hex"
+              ),
+              "defyx"
             )
             .toString("hex"),
       },
@@ -842,13 +865,17 @@ const optionalCases = baseOptionalCases.concat(
 );
 const allCases = activeCases.concat(optionalCases);
 
-async function runRequestedCase(requestedCaseId) {
+async function runRequestedCase(requestedCaseId, options = {}) {
+  const { report = false } = options;
   const testCase = allCases.find((entry) => entry.id === requestedCaseId);
   if (!testCase) {
     throw new Error(`Unknown case: ${requestedCaseId}`);
   }
 
   await testCase.run();
+  if (report) {
+    console.log(`\u2714 ${testCase.name}`);
+  }
 }
 
 function runDriver(includeOptional = false) {
@@ -856,13 +883,15 @@ function runDriver(includeOptional = false) {
   let failures = 0;
 
   for (const testCase of cases) {
-    const result = spawnSync(process.execPath, [__filename, "--case", testCase.id], {
+    const result = spawnSync(process.execPath, [__filename, "--case", testCase.id, "--quiet"], {
       cwd: path.join(__dirname, ".."),
       stdio: "inherit",
     });
 
     if (result.status !== 0) {
       failures += 1;
+    } else {
+      console.log(`\u2714 ${testCase.name}`);
     }
   }
 
@@ -885,25 +914,37 @@ function isNodeTestInvocation() {
   );
 }
 
+function runCaseProcess(testCase) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [__filename, "--case", testCase.id, "--quiet"], {
+      cwd: path.join(__dirname, ".."),
+      env: { ...process.env, NODE_TEST_CONTEXT: "" },
+      stdio: "inherit",
+    });
+
+    child.on("error", reject);
+    child.on("exit", (status, signal) => {
+      if (status === 0) {
+        resolve();
+        return;
+      }
+
+      reject(
+        new Error(
+          signal
+            ? `Test case exited due to signal ${signal}`
+            : `Test case exited with code ${status}`
+        )
+      );
+    });
+  });
+}
+
 function registerNodeTests() {
   const test = require("node:test");
 
   for (const testCase of activeCases) {
-    test(testCase.name, () => {
-      const result = spawnSync(process.execPath, [__filename, "--case", testCase.id], {
-        cwd: path.join(__dirname, ".."),
-        env: { ...process.env, NODE_TEST_CONTEXT: "" },
-        stdio: "inherit",
-      });
-
-      assert.equal(
-        result.status,
-        0,
-        result.signal
-          ? `Test case exited due to signal ${result.signal}`
-          : `Test case exited with code ${result.status}`
-      );
-    });
+    test(testCase.name, () => runCaseProcess(testCase));
   }
 }
 
@@ -919,11 +960,12 @@ if (isNodeTestInvocation() && !process.argv.includes("--case")) {
   registerNodeTests();
 } else if (require.main === module) {
   const includeOptional = process.argv.includes("--all");
+  const quiet = process.argv.includes("--quiet");
   const caseIndex = process.argv.indexOf("--case");
   const requestedCaseId = caseIndex === -1 ? null : process.argv[caseIndex + 1];
 
   if (requestedCaseId) {
-    runRequestedCase(requestedCaseId).catch((error) => {
+    runRequestedCase(requestedCaseId, { report: !quiet }).catch((error) => {
       console.error(error.message);
       process.exit(1);
     });
