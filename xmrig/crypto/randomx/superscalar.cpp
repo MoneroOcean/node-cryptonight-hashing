@@ -196,7 +196,7 @@ namespace randomx {
 		int latency_;
 		int resultOp_ = 0;
 		int dstOp_ = 0;
-		int srcOp_;
+		int srcOp_ = 0;
 
 		SuperscalarInstructionInfo(const char* name)
 			: name_(name), type_(SuperscalarInstructionType::INVALID), latency_(0) {}
@@ -231,7 +231,7 @@ namespace randomx {
 	const SuperscalarInstructionInfo SuperscalarInstructionInfo::IMULH_R = SuperscalarInstructionInfo("IMULH_R", SuperscalarInstructionType::IMULH_R, IMULH_R_ops_array, 1, 0, 1);
 	const SuperscalarInstructionInfo SuperscalarInstructionInfo::ISMULH_R = SuperscalarInstructionInfo("ISMULH_R", SuperscalarInstructionType::ISMULH_R, ISMULH_R_ops_array, 1, 0, 1);
 	const SuperscalarInstructionInfo SuperscalarInstructionInfo::IMUL_RCP = SuperscalarInstructionInfo("IMUL_RCP", SuperscalarInstructionType::IMUL_RCP, IMUL_RCP_ops_array, 1, 1, -1);
-	
+
 	const SuperscalarInstructionInfo SuperscalarInstructionInfo::NOP = SuperscalarInstructionInfo("NOP");
 
 	//these are some of the options how to split a 16-byte window into 3 or 4 x86 instructions.
@@ -282,11 +282,11 @@ namespace randomx {
 			return fetchNextDefault(gen);
 		}
 	private:
-		const char* name_;
-		int index_;
-		const int* counts_;
-		int opsCount_;
-		DecoderBuffer() : index_(-1) {}
+		const char* name_ = nullptr;
+		int index_ = -1;
+		const int* counts_ = nullptr;
+		int opsCount_ = 0;
+		DecoderBuffer() = default;
 		static const DecoderBuffer decodeBuffer484;
 		static const DecoderBuffer decodeBuffer7333;
 		static const DecoderBuffer decodeBuffer3733;
@@ -494,7 +494,7 @@ namespace randomx {
 			// * value must be ready at the required cycle
 			// * cannot be the same as the source register unless the instruction allows it
 			//   - this avoids optimizable instructions such as "xor r, r" or "sub r, r"
-			// * register cannot be multiplied twice in a row unless allowChainedMul is true 
+			// * register cannot be multiplied twice in a row unless allowChainedMul is true
 			//   - this avoids accumulation of trailing zeroes in registers due to excessive multiplication
 			//   - allowChainedMul is set to true if an attempt to find source/destination registers failed (this is quite rare, but prevents a catastrophic failure of the generator)
 			// * either the last instruction applied to the register or its source must be different than this instruction
@@ -555,10 +555,10 @@ namespace randomx {
 		const SuperscalarInstructionInfo* info_;
 		int src_ = -1;
 		int dst_ = -1;
-		int mod_;
-		uint32_t imm32_;
-		SuperscalarInstructionType opGroup_;
-		int opGroupPar_;
+		int mod_ = 0;
+		uint32_t imm32_ = 0;
+		SuperscalarInstructionType opGroup_ = SuperscalarInstructionType::INVALID;
+		int opGroupPar_ = 0;
 		bool canReuse_ = false;
 		bool groupParIsSource_ = false;
 
@@ -619,7 +619,7 @@ namespace randomx {
 			if (commit)
 				if (trace) std::cout << "; (eliminated)" << std::endl;
 			return cycle;
-		} 
+		}
 		else if (mop.isSimple()) {
 			//this macro-op has only one uOP
 			return scheduleUop<commit>(mop.getUop1(), portBusy, cycle);
@@ -676,7 +676,7 @@ namespace randomx {
 			if (trace) std::cout << "; ------------- fetch cycle " << cycle << " (" << decodeBuffer->getName() << ")" << std::endl;
 
 			int bufferIndex = 0;
-			
+
 			//fill all instruction slots in the current decode buffer
 			while (bufferIndex < decodeBuffer->getSize()) {
 				int topCycle = cycle;
@@ -831,7 +831,7 @@ namespace randomx {
 		prog.decodeCycles = decodeCycle;
 		prog.ipc = ipc;
 		prog.mulCount = mulCount;
-		
+
 
 		/*if(INFO) std::cout << "; ALU port utilization:" << std::endl;
 		if (INFO) std::cout << "; (* = in use, _ = idle)" << std::endl;
@@ -847,7 +847,7 @@ namespace randomx {
 		}*/
 	}
 
-	void executeSuperscalar(int_reg_t(&r)[8], SuperscalarProgram& prog, std::vector<uint64_t> *reciprocals) {
+	void executeSuperscalar(int_reg_t(&r)[8], SuperscalarProgram& prog) {
 		for (unsigned j = 0; j < prog.getSize(); ++j) {
 			Instruction& instr = prog(j);
 			switch ((SuperscalarInstructionType)instr.opcode)
@@ -884,10 +884,7 @@ namespace randomx {
 				r[instr.dst] = smulh(r[instr.dst], r[instr.src]);
 				break;
 			case SuperscalarInstructionType::IMUL_RCP:
-				if (reciprocals != nullptr)
-					r[instr.dst] *= (*reciprocals)[instr.getImm32()];
-				else
-					r[instr.dst] *= randomx_reciprocal(instr.getImm32());
+				r[instr.dst] *= randomx_reciprocal(instr.getImm32());
 				break;
 			default:
 				UNREACHABLE;

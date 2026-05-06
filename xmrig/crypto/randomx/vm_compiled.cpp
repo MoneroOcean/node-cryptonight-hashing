@@ -1,5 +1,7 @@
 /*
-Copyright (c) 2018-2019, tevador <tevador@gmail.com>
+Copyright (c) 2018-2020, tevador    <tevador@gmail.com>
+Copyright (c) 2019-2020, SChernykh  <https://github.com/SChernykh>
+Copyright (c) 2019-2020, XMRig      <https://github.com/xmrig>, <support@xmrig.com>
 
 All rights reserved.
 
@@ -28,7 +30,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "crypto/randomx/vm_compiled.hpp"
 #include "crypto/randomx/common.hpp"
-#include "base/tools/Profiler.h"
+#include "crypto/rx/Profiler.h"
 
 namespace randomx {
 
@@ -56,9 +58,20 @@ namespace randomx {
 	void CompiledVm<softAes>::execute() {
 		PROFILE_SCOPE(RandomX_JIT_execute);
 
-#ifdef XMRIG_ARM
+#		if defined(XMRIG_ARM) || defined(XMRIG_RISCV)
 		memcpy(reg.f, config.eMask, sizeof(config.eMask));
-#endif
+#		endif
+
+		const uint8_t* p = mem.memory;
+
+		// dataset prefetch for the first iteration of the main loop
+		rx_prefetch_nta(p + (mem.ma & (RandomX_ConfigurationBase::DatasetBaseSize - 64)));
+
+		// dataset prefetch for the second iteration of the main loop (RandomX v2)
+		if (RandomX_CurrentConfig.Tweak_V2_PREFETCH) {
+			rx_prefetch_nta(p + (mem.mx & (RandomX_ConfigurationBase::DatasetBaseSize - 64)));
+		}
+
 		compiler.getProgramFunc()(reg, mem, scratchpad, RandomX_CurrentConfig.ProgramIterations);
 	}
 

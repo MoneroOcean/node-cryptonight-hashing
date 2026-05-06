@@ -1,7 +1,7 @@
 /* XMRig
  * Copyright (c) 2018-2020 tevador     <tevador@gmail.com>
- * Copyright (c) 2018-2021 SChernykh   <https://github.com/SChernykh>
- * Copyright (c) 2016-2021 XMRig       <https://github.com/xmrig>, <support@xmrig.com>
+ * Copyright (c) 2018-2023 SChernykh   <https://github.com/SChernykh>
+ * Copyright (c) 2016-2023 XMRig       <https://github.com/xmrig>, <support@xmrig.com>
  *
  *   This program is free software: you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -17,7 +17,6 @@
  *   along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-
 #include "crypto/common/VirtualMemory.h"
 #include "backend/cpu/Cpu.h"
 #include "crypto/common/portable/mm_malloc.h"
@@ -25,16 +24,9 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <fstream>
 #include <sys/mman.h>
 
-
-#if defined(__APPLE__) && !defined(XMRIG_OS_APPLE)
-#   define XMRIG_OS_APPLE
-#endif
-
-#if defined(__APPLE__) && !defined(XMRIG_OS_MACOS)
-#   define XMRIG_OS_MACOS
-#endif
 
 #ifdef XMRIG_OS_APPLE
 #   include <libkern/OSCacheControl.h>
@@ -65,6 +57,15 @@
 #   define MAP_HUGE_MASK 0x3f
 #endif
 
+#ifdef XMRIG_OS_FREEBSD
+#   ifndef MAP_ALIGNED_SUPER
+#       define MAP_ALIGNED_SUPER 0
+#   endif
+#   ifndef MAP_PREFAULT_READ
+#       define MAP_PREFAULT_READ 0
+#   endif
+#endif
+
 
 #ifdef XMRIG_SECURE_JIT
 #   define SECURE_PROT_EXEC 0
@@ -73,7 +74,7 @@
 #endif
 
 
-#if defined(XMRIG_OS_LINUX) || (!defined(XMRIG_OS_APPLE) && !defined(__FreeBSD__))
+#if defined(XMRIG_OS_LINUX) || (!defined(XMRIG_OS_APPLE) && !defined(XMRIG_OS_FREEBSD))
 static inline int hugePagesFlag(size_t size)
 {
     return (static_cast<int>(log2(size)) & MAP_HUGE_MASK) << MAP_HUGE_SHIFT;
@@ -83,7 +84,9 @@ static inline int hugePagesFlag(size_t size)
 
 bool xmrig::VirtualMemory::isHugepagesAvailable()
 {
-#   if defined(XMRIG_OS_MACOS) && defined(XMRIG_ARM)
+#   ifdef XMRIG_OS_LINUX
+    return std::ifstream("/proc/sys/vm/nr_hugepages").good() || std::ifstream("/sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages").good();
+#   elif defined(XMRIG_OS_MACOS) && defined(XMRIG_ARM) || defined(XMRIG_OS_HAIKU)
     return false;
 #   else
     return true;
@@ -120,13 +123,19 @@ bool xmrig::VirtualMemory::protectRWX(void *p, size_t size)
 
 bool xmrig::VirtualMemory::protectRX(void *p, size_t size)
 {
+    bool result = true;
+
 #   if defined(XMRIG_OS_APPLE) && defined(XMRIG_ARM)
     pthread_jit_write_protect_np(true);
-    flushInstructionCache(p, size);
-    return true;
 #   else
-    return mprotect(p, size, PROT_READ | PROT_EXEC) == 0;
+    result = (mprotect(p, size, PROT_READ | PROT_EXEC) == 0);
 #   endif
+
+#   if defined(XMRIG_ARM)
+    flushInstructionCache(p, size);
+#   endif
+
+    return result;
 }
 
 
@@ -137,7 +146,7 @@ void *xmrig::VirtualMemory::allocateExecutableMemory(size_t size, bool hugePages
 #   ifdef XMRIG_ARM
     pthread_jit_write_protect_np(false);
 #   endif
-#   elif defined(__FreeBSD__)
+#   elif defined(XMRIG_OS_FREEBSD)
     void *mem = nullptr;
 
     if (hugePages) {
@@ -147,7 +156,8 @@ void *xmrig::VirtualMemory::allocateExecutableMemory(size_t size, bool hugePages
     if (!mem) {
         mem = mmap(0, size, PROT_READ | PROT_WRITE | SECURE_PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     }
-
+#   elif defined(XMRIG_OS_HAIKU)
+    void *mem = mmap(0, size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 #   else
 
     void *mem = nullptr;
@@ -170,8 +180,10 @@ void *xmrig::VirtualMemory::allocateLargePagesMemory(size_t size)
 {
 #   if defined(XMRIG_OS_APPLE)
     void *mem = mmap(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, VM_FLAGS_SUPERPAGE_SIZE_2MB, 0);
-#   elif defined(__FreeBSD__)
+#   elif defined(XMRIG_OS_FREEBSD)
     void *mem = mmap(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_ALIGNED_SUPER | MAP_PREFAULT_READ, -1, 0);
+#   elif defined(XMRIG_OS_HAIKU)
+    void *mem = nullptr;
 #   else
     void *mem = mmap(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | MAP_POPULATE | hugePagesFlag(hugePageSize()), 0, 0);
 #   endif
@@ -261,6 +273,16 @@ bool xmrig::VirtualMemory::allocateOneGbPagesMemory()
     }
 
     return false;
+}
+
+
+bool xmrig::VirtualMemory::adviseLargePages(void *p, size_t size)
+{
+#   ifdef XMRIG_OS_LINUX
+    return (madvise(p, size, MADV_HUGEPAGE) == 0);
+#   else
+    return false;
+#   endif
 }
 
 

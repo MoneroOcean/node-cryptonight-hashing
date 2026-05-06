@@ -1,6 +1,7 @@
 /*
-Copyright (c) 2018-2019, tevador <tevador@gmail.com>
-Copyright (c) 2019, SChernykh    <https://github.com/SChernykh>
+Copyright (c) 2018-2020, tevador    <tevador@gmail.com>
+Copyright (c) 2019-2020, SChernykh  <https://github.com/SChernykh>
+Copyright (c) 2019-2020, XMRig      <https://github.com/xmrig>, <support@xmrig.com>
 
 All rights reserved.
 
@@ -28,16 +29,24 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include "crypto/randomx/jit_compiler_a64.hpp"
-#include "crypto/randomx/superscalar.hpp"
+#include "crypto/common/VirtualMemory.h"
 #include "crypto/randomx/program.hpp"
 #include "crypto/randomx/reciprocal.h"
+#include "crypto/randomx/superscalar.hpp"
 #include "crypto/randomx/virtual_memory.hpp"
+#include "crypto/randomx/soft_aes.h"
 
 static bool hugePagesJIT = false;
+static int optimizedDatasetInit = -1;
 
 void randomx_set_huge_pages_jit(bool hugePages)
 {
 	hugePagesJIT = hugePages;
+}
+
+void randomx_set_optimized_dataset_init(int value)
+{
+	optimizedDatasetInit = value;
 }
 
 namespace ARMV8A {
@@ -59,7 +68,6 @@ constexpr uint32_t LDR_LITERAL = 0x58000000;
 constexpr uint32_t ROR         = 0x9AC02C00;
 constexpr uint32_t ROR_IMM     = 0x93C00000;
 constexpr uint32_t MOV_REG     = 0xAA0003E0;
-constexpr uint32_t MOV_VREG_EL = 0x6E080400;
 constexpr uint32_t FADD        = 0x4E60D400;
 constexpr uint32_t FSUB        = 0x4EE0D400;
 constexpr uint32_t FEOR        = 0x6E201C00;
@@ -82,11 +90,11 @@ static size_t CalcDatasetItemSize()
 	// Prologue
 	((uint8_t*)randomx_calc_dataset_item_aarch64_prefetch - (uint8_t*)randomx_calc_dataset_item_aarch64) +
 	// Main loop
-	RandomX_CurrentConfig.CacheAccesses * (
+	RandomX_ConfigurationBase::CacheAccesses * (
 		// Main loop prologue
 		((uint8_t*)randomx_calc_dataset_item_aarch64_mix - ((uint8_t*)randomx_calc_dataset_item_aarch64_prefetch)) + 4 +
 		// Inner main loop (instructions)
-		((RandomX_ConfigurationBase::SuperscalarLatency * 3) + 2) * 16 +
+		((RandomX_ConfigurationBase::SuperscalarMaxLatency * 3) + 2) * 16 +
 		// Main loop epilogue
 		((uint8_t*)randomx_calc_dataset_item_aarch64_store_result - (uint8_t*)randomx_calc_dataset_item_aarch64_mix) + 4
 	) +
@@ -94,46 +102,40 @@ static size_t CalcDatasetItemSize()
 	((uint8_t*)randomx_calc_dataset_item_aarch64_end - (uint8_t*)randomx_calc_dataset_item_aarch64_store_result);
 }
 
-constexpr uint32_t IntRegMap[8] = { 4, 5, 6, 7, 12, 13, 14, 15 };
+constexpr uint8_t IntRegMap[8] = { 4, 5, 6, 7, 12, 13, 14, 15 };
 
-JitCompilerA64::JitCompilerA64(bool hugePagesEnable)
-	: code((uint8_t*) allocExecutableMemory(CodeSize + CalcDatasetItemSize(), hugePagesJIT && hugePagesEnable))
-	, literalPos(ImulRcpLiteralsEnd)
-	, num32bitLiterals(0)
+JitCompilerA64::JitCompilerA64(bool hugePagesEnable, bool) :
+	hugePages(hugePagesJIT && hugePagesEnable),
+	literalPos(ImulRcpLiteralsEnd)
 {
-	memset(reg_changed_offset, 0, sizeof(reg_changed_offset));
-	memcpy(code, (void*) randomx_program_aarch64, CodeSize);
 }
 
 JitCompilerA64::~JitCompilerA64()
 {
-	freePagedMemory(code, CodeSize + CalcDatasetItemSize());
+	freePagedMemory(code, allocatedSize);
 }
 
-#if defined(ios_HOST_OS) || defined (darwin_HOST_OS)
-void sys_icache_invalidate(void *start, size_t len);
+void JitCompilerA64::generateProgram(Program& program, ProgramConfiguration& config, uint32_t flags)
+{
+	if (!allocatedSize) {
+		allocate(CodeSize);
+	}
+#ifdef XMRIG_SECURE_JIT
+	else {
+		enableWriting();
+	}
 #endif
 
-static void clear_code_cache(char* p1, char* p2)
-{
-#	if defined(ios_HOST_OS) || defined (darwin_HOST_OS)
-	sys_icache_invalidate(p1, static_cast<size_t>(p2 - p1));
-#	elif defined (HAVE_BUILTIN_CLEAR_CACHE) || defined (__GNUC__)
-	__builtin___clear_cache(p1, p2);
-#	else
-#	error "No clear code cache function found"
-#	endif
-}
+	vm_flags = flags;
 
-void JitCompilerA64::generateProgram(Program& program, ProgramConfiguration& config, uint32_t)
-{
 	uint32_t codePos = MainLoopBegin + 4;
 
+	uint32_t mask = ((RandomX_CurrentConfig.Log2_ScratchpadL3 - 7) << 10);
 	// and w16, w10, ScratchpadL3Mask64
-	emit32(0x121A0000 | 16 | (10 << 5) | ((RandomX_CurrentConfig.Log2_ScratchpadL3 - 7) << 10), code, codePos);
+	emit32(0x121A0000 | 16 | (10 << 5) | mask, code, codePos);
 
-	// and w17, w18, ScratchpadL3Mask64
-	emit32(0x121A0000 | 17 | (18 << 5) | ((RandomX_CurrentConfig.Log2_ScratchpadL3 - 7) << 10), code, codePos);
+	// and w17, w20, ScratchpadL3Mask64
+	emit32(0x121A0000 | 17 | (20 << 5) | mask, code, codePos);
 
 	codePos = PrologueSize;
 	literalPos = ImulRcpLiteralsEnd;
@@ -145,44 +147,91 @@ void JitCompilerA64::generateProgram(Program& program, ProgramConfiguration& con
 	for (uint32_t i = 0; i < program.getSize(); ++i)
 	{
 		Instruction& instr = program(i);
-		instr.src %= RegistersCount;
-		instr.dst %= RegistersCount;
 		(this->*engine[instr.opcode])(instr, codePos);
 	}
 
 	// Update spMix2
-	// eor w18, config.readReg2, config.readReg3
-	emit32(ARMV8A::EOR32 | 18 | (IntRegMap[config.readReg2] << 5) | (IntRegMap[config.readReg3] << 16), code, codePos);
+	// eor w20, config.readReg2, config.readReg3
+	emit32(ARMV8A::EOR32 | 20 | (IntRegMap[config.readReg2] << 5) | (IntRegMap[config.readReg3] << 16), code, codePos);
 
 	// Jump back to the main loop
 	const uint32_t offset = (((uint8_t*)randomx_program_aarch64_vm_instructions_end) - ((uint8_t*)randomx_program_aarch64)) - codePos;
 	emit32(ARMV8A::B | (offset / 4), code, codePos);
 
-	// and w18, w18, CacheLineAlignMask
+	mask = ((RandomX_CurrentConfig.Log2_DatasetBaseSize - 7) << 10);
+	// and w20, w20, CacheLineAlignMask
 	codePos = (((uint8_t*)randomx_program_aarch64_cacheline_align_mask1) - ((uint8_t*)randomx_program_aarch64));
-	emit32(0x121A0000 | 18 | (18 << 5) | ((RandomX_CurrentConfig.Log2_DatasetBaseSize - 7) << 10), code, codePos);
+	emit32(0x121A0000 | 20 | (20 << 5) | mask, code, codePos);
 
 	// and w10, w10, CacheLineAlignMask
 	codePos = (((uint8_t*)randomx_program_aarch64_cacheline_align_mask2) - ((uint8_t*)randomx_program_aarch64));
-	emit32(0x121A0000 | 10 | (10 << 5) | ((RandomX_CurrentConfig.Log2_DatasetBaseSize - 7) << 10), code, codePos);
+	emit32(0x121A0000 | 10 | (10 << 5) | mask, code, codePos);
 
 	// Update spMix1
 	// eor x10, config.readReg0, config.readReg1
 	codePos = ((uint8_t*)randomx_program_aarch64_update_spMix1) - ((uint8_t*)randomx_program_aarch64);
 	emit32(ARMV8A::EOR | 10 | (IntRegMap[config.readReg0] << 5) | (IntRegMap[config.readReg1] << 16), code, codePos);
 
-	clear_code_cache(reinterpret_cast<char*>(code + MainLoopBegin), reinterpret_cast<char*>(code + codePos));
+	codePos = ((uint8_t*)randomx_program_aarch64_v2_FE_mix) - ((uint8_t*)randomx_program_aarch64);
+
+	// Enable RandomX v2 AES tweak
+	if (RandomX_CurrentConfig.Tweak_V2_AES) {
+		if (flags & RANDOMX_FLAG_HARD_AES) {
+			// Disable the jump to RandomX v1 FE mix code by writing "movi v28.4s, 0" instruction
+			emit32(0x4F00041C, code, codePos);
+		}
+		else {
+			// Jump to RandomX v2 FE mix soft AES code by writing "b randomx_program_aarch64_v2_FE_mix_soft_aes" instruction
+			uint32_t offset = (uint8_t*)randomx_program_aarch64_v2_FE_mix_soft_aes - (uint8_t*)randomx_program_aarch64_v2_FE_mix;
+			emit32(ARMV8A::B | (offset / 4), code, codePos);
+
+			offset = (uint8_t*)randomx_program_aarch64_aes_lut_pointers - (uint8_t*)randomx_program_aarch64;
+
+			*(uint64_t*)(code + offset + 0) = (uint64_t) &lutEnc[0][0];
+			*(uint64_t*)(code + offset + 8) = (uint64_t) &lutDec[0][0];
+		}
+	}
+	else {
+		// Restore the jump to RandomX v1 FE mix code
+		const uint32_t offset = (uint8_t*)randomx_program_aarch64_v1_FE_mix - (uint8_t*)randomx_program_aarch64_v2_FE_mix;
+		emit32(ARMV8A::B | (offset / 4), code, codePos);
+	}
+
+	// Apply v2 prefetch tweak
+	if (RandomX_CurrentConfig.Tweak_V2_PREFETCH) {
+		uint32_t dst = (((uint8_t*)randomx_program_aarch64_vm_instructions_end) - ((uint8_t*)randomx_program_aarch64));
+		uint32_t src = (((uint8_t*)randomx_program_aarch64_vm_instructions_end_v2) - ((uint8_t*)randomx_program_aarch64));
+		memcpy(code + dst, code + src, 16);
+	}
+	else {
+		uint32_t dst = (((uint8_t*)randomx_program_aarch64_vm_instructions_end) - ((uint8_t*)randomx_program_aarch64));
+		uint32_t src = (((uint8_t*)randomx_program_aarch64_vm_instructions_end_v1) - ((uint8_t*)randomx_program_aarch64));
+		memcpy(code + dst, code + src, 16);
+	}
+
+#	ifndef XMRIG_OS_APPLE
+	xmrig::VirtualMemory::flushInstructionCache(reinterpret_cast<char*>(code + MainLoopBegin), codePos - MainLoopBegin);
+#	endif
 }
 
 void JitCompilerA64::generateProgramLight(Program& program, ProgramConfiguration& config, uint32_t datasetOffset)
 {
+	if (!allocatedSize) {
+		allocate(CodeSize);
+	}
+#ifdef XMRIG_SECURE_JIT
+	else {
+		enableWriting();
+	}
+#endif
+
 	uint32_t codePos = MainLoopBegin + 4;
 
 	// and w16, w10, ScratchpadL3Mask64
 	emit32(0x121A0000 | 16 | (10 << 5) | ((RandomX_CurrentConfig.Log2_ScratchpadL3 - 7) << 10), code, codePos);
 
-	// and w17, w18, ScratchpadL3Mask64
-	emit32(0x121A0000 | 17 | (18 << 5) | ((RandomX_CurrentConfig.Log2_ScratchpadL3 - 7) << 10), code, codePos);
+	// and w17, w20, ScratchpadL3Mask64
+	emit32(0x121A0000 | 17 | (20 << 5) | ((RandomX_CurrentConfig.Log2_ScratchpadL3 - 7) << 10), code, codePos);
 
 	codePos = PrologueSize;
 	literalPos = ImulRcpLiteralsEnd;
@@ -194,27 +243,62 @@ void JitCompilerA64::generateProgramLight(Program& program, ProgramConfiguration
 	for (uint32_t i = 0; i < program.getSize(); ++i)
 	{
 		Instruction& instr = program(i);
-		instr.src %= RegistersCount;
-		instr.dst %= RegistersCount;
 		(this->*engine[instr.opcode])(instr, codePos);
 	}
 
 	// Update spMix2
-	// eor w18, config.readReg2, config.readReg3
-	emit32(ARMV8A::EOR32 | 18 | (IntRegMap[config.readReg2] << 5) | (IntRegMap[config.readReg3] << 16), code, codePos);
+	// eor w20, config.readReg2, config.readReg3
+	emit32(ARMV8A::EOR32 | 20 | (IntRegMap[config.readReg2] << 5) | (IntRegMap[config.readReg3] << 16), code, codePos);
+
+	// Apply v2 prefetch tweak
+	if (RandomX_CurrentConfig.Tweak_V2_PREFETCH) {
+		uint32_t dst = (((uint8_t*)randomx_program_aarch64_vm_instructions_end_light_tweak) - ((uint8_t*)randomx_program_aarch64));
+		uint32_t src = (((uint8_t*)randomx_program_aarch64_vm_instructions_end_light_v2) - ((uint8_t*)randomx_program_aarch64));
+		memcpy(code + dst, code + src, 8);
+	}
+	else {
+		uint32_t dst = (((uint8_t*)randomx_program_aarch64_vm_instructions_end_light_tweak) - ((uint8_t*)randomx_program_aarch64));
+		uint32_t src = (((uint8_t*)randomx_program_aarch64_vm_instructions_end_light_v1) - ((uint8_t*)randomx_program_aarch64));
+		memcpy(code + dst, code + src, 8);
+	}
 
 	// Jump back to the main loop
 	const uint32_t offset = (((uint8_t*)randomx_program_aarch64_vm_instructions_end_light) - ((uint8_t*)randomx_program_aarch64)) - codePos;
 	emit32(ARMV8A::B | (offset / 4), code, codePos);
 
-	// and w2, w9, CacheLineAlignMask
+	// and w2, w2, CacheLineAlignMask
 	codePos = (((uint8_t*)randomx_program_aarch64_light_cacheline_align_mask) - ((uint8_t*)randomx_program_aarch64));
-	emit32(0x121A0000 | 2 | (9 << 5) | ((RandomX_CurrentConfig.Log2_DatasetBaseSize - 7) << 10), code, codePos);
+	emit32(0x121A0000 | 2 | (2 << 5) | ((RandomX_CurrentConfig.Log2_DatasetBaseSize - 7) << 10), code, codePos);
 
 	// Update spMix1
 	// eor x10, config.readReg0, config.readReg1
 	codePos = ((uint8_t*)randomx_program_aarch64_update_spMix1) - ((uint8_t*)randomx_program_aarch64);
 	emit32(ARMV8A::EOR | 10 | (IntRegMap[config.readReg0] << 5) | (IntRegMap[config.readReg1] << 16), code, codePos);
+
+	codePos = ((uint8_t*)randomx_program_aarch64_v2_FE_mix) - ((uint8_t*)randomx_program_aarch64);
+
+	// Enable RandomX v2 AES tweak
+	if (RandomX_CurrentConfig.Tweak_V2_AES) {
+		if (vm_flags & RANDOMX_FLAG_HARD_AES) {
+			// Disable the jump to RandomX v1 FE mix code by writing "movi v28.4s, 0" instruction
+			emit32(0x4F00041C, code, codePos);
+		}
+		else {
+			// Jump to RandomX v2 FE mix soft AES code by writing "b randomx_program_aarch64_v2_FE_mix_soft_aes" instruction
+			uint32_t offset = (uint8_t*)randomx_program_aarch64_v2_FE_mix_soft_aes - (uint8_t*)randomx_program_aarch64_v2_FE_mix;
+			emit32(ARMV8A::B | (offset / 4), code, codePos);
+
+			offset = (uint8_t*)randomx_program_aarch64_aes_lut_pointers - (uint8_t*)randomx_program_aarch64;
+
+			*(uint64_t*)(code + offset + 0) = (uint64_t) &lutEnc[0][0];
+			*(uint64_t*)(code + offset + 8) = (uint64_t) &lutDec[0][0];
+		}
+	}
+	else {
+		// Restore the jump to RandomX v1 FE mix code
+		const uint32_t offset = (uint8_t*)randomx_program_aarch64_v1_FE_mix - (uint8_t*)randomx_program_aarch64_v2_FE_mix;
+		emit32(ARMV8A::B | (offset / 4), code, codePos);
+	}
 
 	// Apply dataset offset
 	codePos = ((uint8_t*)randomx_program_aarch64_light_dataset_offset) - ((uint8_t*)randomx_program_aarch64);
@@ -226,12 +310,23 @@ void JitCompilerA64::generateProgramLight(Program& program, ProgramConfiguration
 	emit32(ARMV8A::ADD_IMM_LO | 2 | (2 << 5) | (imm_lo << 10), code, codePos);
 	emit32(ARMV8A::ADD_IMM_HI | 2 | (2 << 5) | (imm_hi << 10), code, codePos);
 
-	clear_code_cache(reinterpret_cast<char*>(code + MainLoopBegin), reinterpret_cast<char*>(code + codePos));
+#	ifndef XMRIG_OS_APPLE
+	xmrig::VirtualMemory::flushInstructionCache(reinterpret_cast<char*>(code + MainLoopBegin), codePos - MainLoopBegin);
+#	endif
 }
 
 template<size_t N>
-void JitCompilerA64::generateSuperscalarHash(SuperscalarProgram(&programs)[N], std::vector<uint64_t> &reciprocalCache)
+void JitCompilerA64::generateSuperscalarHash(SuperscalarProgram(&programs)[N])
 {
+	if (!allocatedSize) {
+		allocate(CodeSize + CalcDatasetItemSize());
+	}
+#ifdef XMRIG_SECURE_JIT
+	else {
+		enableWriting();
+	}
+#endif
+
 	uint32_t codePos = CodeSize;
 
 	uint8_t* p1 = (uint8_t*)randomx_calc_dataset_item_aarch64;
@@ -242,7 +337,7 @@ void JitCompilerA64::generateSuperscalarHash(SuperscalarProgram(&programs)[N], s
 	num32bitLiterals = 64;
 	constexpr uint32_t tmp_reg = 12;
 
-	for (size_t i = 0; i < RandomX_CurrentConfig.CacheAccesses; ++i)
+	for (size_t i = 0; i < RandomX_ConfigurationBase::CacheAccesses; ++i)
 	{
 		// and x11, x10, CacheSize / CacheLineSize - 1
 		emit32(0x92400000 | 11 | (10 << 5) | ((RandomX_CurrentConfig.Log2_CacheSize - 1) << 10), code, codePos);
@@ -263,7 +358,7 @@ void JitCompilerA64::generateSuperscalarHash(SuperscalarProgram(&programs)[N], s
 		{
 			const Instruction& instr = prog(j);
 			if (static_cast<SuperscalarInstructionType>(instr.opcode) == randomx::SuperscalarInstructionType::IMUL_RCP)
-				emit64(reciprocalCache[instr.getImm32()], code, codePos);
+				emit64(randomx_reciprocal(instr.getImm32()), code, codePos);
 		}
 
 		// Jump over literal pool
@@ -342,13 +437,19 @@ void JitCompilerA64::generateSuperscalarHash(SuperscalarProgram(&programs)[N], s
 	memcpy(code + codePos, p1, p2 - p1);
 	codePos += p2 - p1;
 
-	clear_code_cache(reinterpret_cast<char*>(code + CodeSize), reinterpret_cast<char*>(code + codePos));
+#	ifndef XMRIG_OS_APPLE
+	xmrig::VirtualMemory::flushInstructionCache(reinterpret_cast<char*>(code + CodeSize), codePos - MainLoopBegin);
+#	endif
 }
 
-template void JitCompilerA64::generateSuperscalarHash(SuperscalarProgram(&programs)[RANDOMX_CACHE_MAX_ACCESSES], std::vector<uint64_t> &reciprocalCache);
+template void JitCompilerA64::generateSuperscalarHash(SuperscalarProgram(&programs)[RANDOMX_CACHE_MAX_ACCESSES]);
 
-DatasetInitFunc* JitCompilerA64::getDatasetInitFunc()
+DatasetInitFunc* JitCompilerA64::getDatasetInitFunc() const
 {
+#	ifdef XMRIG_SECURE_JIT
+	enableExecution();
+#	endif
+
 	return (DatasetInitFunc*)(code + (((uint8_t*)randomx_init_dataset_aarch64) - ((uint8_t*)randomx_program_aarch64)));
 }
 
@@ -356,6 +457,30 @@ size_t JitCompilerA64::getCodeSize()
 {
 	return CodeSize;
 }
+
+void JitCompilerA64::enableWriting() const
+{
+	xmrig::VirtualMemory::protectRW(code, allocatedSize);
+}
+
+void JitCompilerA64::enableExecution() const
+{
+	xmrig::VirtualMemory::protectRX(code, allocatedSize);
+}
+
+
+void JitCompilerA64::allocate(size_t size)
+{
+	allocatedSize = size;
+	code = static_cast<uint8_t*>(allocExecutableMemory(allocatedSize, hugePages));
+
+	memcpy(code, reinterpret_cast<const void *>(randomx_program_aarch64), CodeSize);
+
+#	ifndef XMRIG_OS_APPLE
+	xmrig::VirtualMemory::flushInstructionCache(reinterpret_cast<char*>(code), CodeSize);
+#	endif
+}
+
 
 void JitCompilerA64::emitMovImmediate(uint32_t dst, uint32_t imm, uint8_t* code, uint32_t& codePos)
 {
@@ -430,7 +555,7 @@ void JitCompilerA64::emitAddImmediate(uint32_t dst, uint32_t src, uint32_t imm, 
 	}
 	else
 	{
-		constexpr uint32_t tmp_reg = 18;
+		constexpr uint32_t tmp_reg = 20;
 		emitMovImmediate(tmp_reg, imm, code, k);
 
 		// add dst, src, tmp_reg
@@ -450,9 +575,12 @@ void JitCompilerA64::emitMemLoad(uint32_t dst, uint32_t src, Instruction& instr,
 	if (src != dst)
 	{
 		imm &= instr.getModMem() ? (RandomX_CurrentConfig.ScratchpadL1_Size - 1) : (RandomX_CurrentConfig.ScratchpadL2_Size - 1);
-		emitAddImmediate(tmp_reg, src, imm, code, k);
+		uint32_t t = 0x927d0000 | tmp_reg | (tmp_reg << 5);
+		if (imm)
+			emitAddImmediate(tmp_reg, src, imm, code, k);
+		else
+			t = 0x927d0000 | tmp_reg | (src << 5);
 
-		constexpr uint32_t t = 0x927d0000 | tmp_reg | (tmp_reg << 5);
 		const uint32_t andInstrL1 = t | ((RandomX_CurrentConfig.Log2_ScratchpadL1 - 4) << 10);
 		const uint32_t andInstrL2 = t | ((RandomX_CurrentConfig.Log2_ScratchpadL2 - 4) << 10);
 
@@ -464,10 +592,18 @@ void JitCompilerA64::emitMemLoad(uint32_t dst, uint32_t src, Instruction& instr,
 	else
 	{
 		imm = (imm & ScratchpadL3Mask) >> 3;
-		emitMovImmediate(tmp_reg, imm, code, k);
+		if (imm)
+		{
+			emitMovImmediate(tmp_reg, imm, code, k);
 
-		// ldr tmp_reg, [x2, tmp_reg, lsl 3]
-		emit32(0xf8607840 | tmp_reg | (tmp_reg << 16), code, k);
+			// ldr tmp_reg, [x2, tmp_reg, lsl 3]
+			emit32(0xf8607840 | tmp_reg | (tmp_reg << 16), code, k);
+		}
+		else
+		{
+			// ldr tmp_reg, [x2]
+			emit32(0xf9400040 | tmp_reg, code, k);
+		}
 	}
 
 	codePos = k;
@@ -479,28 +615,25 @@ void JitCompilerA64::emitMemLoadFP(uint32_t src, Instruction& instr, uint8_t* co
 	uint32_t k = codePos;
 
 	uint32_t imm = instr.getImm32();
-	constexpr uint32_t tmp_reg = 18;
+	constexpr uint32_t tmp_reg = 19;
 
 	imm &= instr.getModMem() ? (RandomX_CurrentConfig.ScratchpadL1_Size - 1) : (RandomX_CurrentConfig.ScratchpadL2_Size - 1);
-	emitAddImmediate(tmp_reg, src, imm, code, k);
+	uint32_t t = 0x927d0000 | tmp_reg | (tmp_reg << 5);
+	if (imm)
+		emitAddImmediate(tmp_reg, src, imm, code, k);
+	else
+		t = 0x927d0000 | tmp_reg | (src << 5);
 
-	constexpr uint32_t t = 0x927d0000 | tmp_reg | (tmp_reg << 5);
 	const uint32_t andInstrL1 = t | ((RandomX_CurrentConfig.Log2_ScratchpadL1 - 4) << 10);
 	const uint32_t andInstrL2 = t | ((RandomX_CurrentConfig.Log2_ScratchpadL2 - 4) << 10);
 
 	emit32(instr.getModMem() ? andInstrL1 : andInstrL2, code, k);
 
-	// add tmp_reg, x2, tmp_reg
-	emit32(ARMV8A::ADD | tmp_reg | (2 << 5) | (tmp_reg << 16), code, k);
+	// ldr tmp_reg_fp, [x2, tmp_reg]
+	emit32(0x3ce06800 | tmp_reg_fp | (2 << 5) | (tmp_reg << 16), code, k);
 
-	// ldpsw tmp_reg, tmp_reg + 1, [tmp_reg]
-	emit32(0x69400000 | tmp_reg | (tmp_reg << 5) | ((tmp_reg + 1) << 10), code, k);
-
-	// ins tmp_reg_fp.d[0], tmp_reg
-	emit32(0x4E081C00 | tmp_reg_fp | (tmp_reg << 5), code, k);
-
-	// ins tmp_reg_fp.d[1], tmp_reg + 1
-	emit32(0x4E181C00 | tmp_reg_fp | ((tmp_reg + 1) << 5), code, k);
+	// sxtl.2d	tmp_reg_fp, tmp_reg_fp
+	emit32(0x0f20a400 | tmp_reg_fp | (tmp_reg_fp << 5), code, k);
 
 	// scvtf tmp_reg_fp.2d, tmp_reg_fp.2d
 	emit32(0x4E61D800 | tmp_reg_fp | (tmp_reg_fp << 5), code, k);
@@ -533,7 +666,7 @@ void JitCompilerA64::h_IADD_M(Instruction& instr, uint32_t& codePos)
 	const uint32_t src = IntRegMap[instr.src];
 	const uint32_t dst = IntRegMap[instr.dst];
 
-	constexpr uint32_t tmp_reg = 18;
+	constexpr uint32_t tmp_reg = 20;
 	emitMemLoad<tmp_reg>(dst, src, instr, code, k);
 
 	// add dst, dst, tmp_reg
@@ -571,7 +704,7 @@ void JitCompilerA64::h_ISUB_M(Instruction& instr, uint32_t& codePos)
 	const uint32_t src = IntRegMap[instr.src];
 	const uint32_t dst = IntRegMap[instr.dst];
 
-	constexpr uint32_t tmp_reg = 18;
+	constexpr uint32_t tmp_reg = 20;
 	emitMemLoad<tmp_reg>(dst, src, instr, code, k);
 
 	// sub dst, dst, tmp_reg
@@ -590,7 +723,7 @@ void JitCompilerA64::h_IMUL_R(Instruction& instr, uint32_t& codePos)
 
 	if (src == dst)
 	{
-		src = 18;
+		src = 20;
 		emitMovImmediate(src, instr.getImm32(), code, k);
 	}
 
@@ -608,7 +741,7 @@ void JitCompilerA64::h_IMUL_M(Instruction& instr, uint32_t& codePos)
 	const uint32_t src = IntRegMap[instr.src];
 	const uint32_t dst = IntRegMap[instr.dst];
 
-	constexpr uint32_t tmp_reg = 18;
+	constexpr uint32_t tmp_reg = 20;
 	emitMemLoad<tmp_reg>(dst, src, instr, code, k);
 
 	// sub dst, dst, tmp_reg
@@ -639,7 +772,7 @@ void JitCompilerA64::h_IMULH_M(Instruction& instr, uint32_t& codePos)
 	const uint32_t src = IntRegMap[instr.src];
 	const uint32_t dst = IntRegMap[instr.dst];
 
-	constexpr uint32_t tmp_reg = 18;
+	constexpr uint32_t tmp_reg = 20;
 	emitMemLoad<tmp_reg>(dst, src, instr, code, k);
 
 	// umulh dst, dst, tmp_reg
@@ -670,7 +803,7 @@ void JitCompilerA64::h_ISMULH_M(Instruction& instr, uint32_t& codePos)
 	const uint32_t src = IntRegMap[instr.src];
 	const uint32_t dst = IntRegMap[instr.dst];
 
-	constexpr uint32_t tmp_reg = 18;
+	constexpr uint32_t tmp_reg = 20;
 	emitMemLoad<tmp_reg>(dst, src, instr, code, k);
 
 	// smulh dst, dst, tmp_reg
@@ -688,7 +821,7 @@ void JitCompilerA64::h_IMUL_RCP(Instruction& instr, uint32_t& codePos)
 
 	uint32_t k = codePos;
 
-	constexpr uint32_t tmp_reg = 18;
+	constexpr uint32_t tmp_reg = 20;
 	const uint32_t dst = IntRegMap[instr.dst];
 
 	constexpr uint64_t N = 1ULL << 63;
@@ -707,9 +840,9 @@ void JitCompilerA64::h_IMUL_RCP(Instruction& instr, uint32_t& codePos)
 	literalPos -= sizeof(uint64_t);
 	*(uint64_t*)(code + literalPos) = (q << shift) + ((r << shift) / divisor);
 
-	if (literal_id < 13)
+	if (literal_id < 12)
 	{
-		static constexpr uint32_t literal_regs[13] = { 30 << 16, 29 << 16, 28 << 16, 27 << 16, 26 << 16, 25 << 16, 24 << 16, 23 << 16, 22 << 16, 21 << 16, 20 << 16, 11 << 16, 0 };
+		static constexpr uint32_t literal_regs[12] = { 30 << 16, 29 << 16, 28 << 16, 27 << 16, 26 << 16, 25 << 16, 24 << 16, 23 << 16, 22 << 16, 21 << 16, 11 << 16, 0 };
 
 		// mul dst, dst, literal_reg
 		emit32(ARMV8A::MUL | dst | (dst << 5) | literal_regs[literal_id], code, k);
@@ -747,7 +880,7 @@ void JitCompilerA64::h_IXOR_R(Instruction& instr, uint32_t& codePos)
 
 	if (src == dst)
 	{
-		src = 18;
+		src = 20;
 		emitMovImmediate(src, instr.getImm32(), code, k);
 	}
 
@@ -765,7 +898,7 @@ void JitCompilerA64::h_IXOR_M(Instruction& instr, uint32_t& codePos)
 	const uint32_t src = IntRegMap[instr.src];
 	const uint32_t dst = IntRegMap[instr.dst];
 
-	constexpr uint32_t tmp_reg = 18;
+	constexpr uint32_t tmp_reg = 20;
 	emitMemLoad<tmp_reg>(dst, src, instr, code, k);
 
 	// eor dst, dst, tmp_reg
@@ -788,7 +921,8 @@ void JitCompilerA64::h_IROR_R(Instruction& instr, uint32_t& codePos)
 	else
 	{
 		// ror dst, dst, imm
-		emit32(ARMV8A::ROR_IMM | dst | (dst << 5) | ((instr.getImm32() & 63) << 10) | (dst << 16), code, codePos);
+		if ((instr.getImm32() & 63))
+			emit32(ARMV8A::ROR_IMM | dst | (dst << 5) | ((instr.getImm32() & 63) << 10) | (dst << 16), code, codePos);
 	}
 
 	reg_changed_offset[instr.dst] = codePos;
@@ -803,7 +937,7 @@ void JitCompilerA64::h_IROL_R(Instruction& instr, uint32_t& codePos)
 
 	if (src != dst)
 	{
-		constexpr uint32_t tmp_reg = 18;
+		constexpr uint32_t tmp_reg = 20;
 
 		// sub tmp_reg, xzr, src
 		emit32(ARMV8A::SUB | tmp_reg | (31 << 5) | (src << 16), code, k);
@@ -814,7 +948,8 @@ void JitCompilerA64::h_IROL_R(Instruction& instr, uint32_t& codePos)
 	else
 	{
 		// ror dst, dst, imm
-		emit32(ARMV8A::ROR_IMM | dst | (dst << 5) | ((-instr.getImm32() & 63) << 10) | (dst << 16), code, k);
+		if ((instr.getImm32() & 63))
+			emit32(ARMV8A::ROR_IMM | dst | (dst << 5) | ((-instr.getImm32() & 63) << 10) | (dst << 16), code, k);
 	}
 
 	reg_changed_offset[instr.dst] = k;
@@ -831,7 +966,7 @@ void JitCompilerA64::h_ISWAP_R(Instruction& instr, uint32_t& codePos)
 
 	uint32_t k = codePos;
 
-	constexpr uint32_t tmp_reg = 18;
+	constexpr uint32_t tmp_reg = 20;
 	emit32(ARMV8A::MOV_REG | tmp_reg | (dst << 16), code, k);
 	emit32(ARMV8A::MOV_REG | dst | (src << 16), code, k);
 	emit32(ARMV8A::MOV_REG | src | (tmp_reg << 16), code, k);
@@ -847,13 +982,8 @@ void JitCompilerA64::h_FSWAP_R(Instruction& instr, uint32_t& codePos)
 
 	const uint32_t dst = instr.dst + 16;
 
-	constexpr uint32_t tmp_reg_fp = 28;
-	constexpr uint32_t src_index1 = 1 << 14;
-	constexpr uint32_t dst_index1 = 1 << 20;
-
-	emit32(ARMV8A::MOV_VREG_EL | tmp_reg_fp | (dst << 5) | src_index1, code, k);
-	emit32(ARMV8A::MOV_VREG_EL | dst | (dst << 5) | dst_index1, code, k);
-	emit32(ARMV8A::MOV_VREG_EL | dst | (tmp_reg_fp << 5), code, k);
+	// ext	dst.16b, dst.16b, dst.16b, #0x8
+	emit32(0x6e004000 | dst | (dst << 5) | (dst << 16), code, k);
 
 	codePos = k;
 }
@@ -979,11 +1109,19 @@ void JitCompilerA64::h_CFROUND(Instruction& instr, uint32_t& codePos)
 
 	const uint32_t src = IntRegMap[instr.src];
 
-	constexpr uint32_t tmp_reg = 18;
+	constexpr uint32_t tmp_reg = 20;
 	constexpr uint32_t fpcr_tmp_reg = 8;
 
 	// ror tmp_reg, src, imm
 	emit32(ARMV8A::ROR_IMM | tmp_reg | (src << 5) | ((instr.getImm32() & 63) << 10) | (src << 16), code, k);
+
+	if (RandomX_CurrentConfig.Tweak_V2_CFROUND) {
+		// tst tmp_reg, 60
+		emit32(0xF27E0E9F, code, k);
+
+		// bne next
+		emit32(0x54000081, code, k);
+	}
 
 	// bfi fpcr_tmp_reg, tmp_reg, 40, 2
 	emit32(0xB3580400 | fpcr_tmp_reg | (tmp_reg << 5), code, k);
@@ -1003,7 +1141,7 @@ void JitCompilerA64::h_ISTORE(Instruction& instr, uint32_t& codePos)
 
 	const uint32_t src = IntRegMap[instr.src];
 	const uint32_t dst = IntRegMap[instr.dst];
-	constexpr uint32_t tmp_reg = 18;
+	constexpr uint32_t tmp_reg = 20;
 
 	uint32_t imm = instr.getImm32();
 
@@ -1012,9 +1150,12 @@ void JitCompilerA64::h_ISTORE(Instruction& instr, uint32_t& codePos)
 	else
 		imm &= RandomX_CurrentConfig.ScratchpadL3_Size - 1;
 
-	emitAddImmediate(tmp_reg, dst, imm, code, k);
+	uint32_t t = 0x927d0000 | tmp_reg | (tmp_reg << 5);
+	if (imm)
+		emitAddImmediate(tmp_reg, dst, imm, code, k);
+	else
+		t = 0x927d0000 | tmp_reg | (dst << 5);
 
-	constexpr uint32_t t = 0x927d0000 | tmp_reg | (tmp_reg << 5);
 	const uint32_t andInstrL1 = t | ((RandomX_CurrentConfig.Log2_ScratchpadL1 - 4) << 10);
 	const uint32_t andInstrL2 = t | ((RandomX_CurrentConfig.Log2_ScratchpadL2 - 4) << 10);
 	const uint32_t andInstrL3 = t | ((RandomX_CurrentConfig.Log2_ScratchpadL3 - 4) << 10);

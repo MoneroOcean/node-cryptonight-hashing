@@ -28,12 +28,22 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <thread>
 #include <vector>
+#include <array>
 
 #include "crypto/randomx/aes_hash.hpp"
-#include "crypto/randomx/soft_aes.h"
-#include "crypto/randomx/randomx.h"
 #include "base/tools/Chrono.h"
-#include "base/tools/Profiler.h"
+#include "crypto/randomx/randomx.h"
+#include "crypto/randomx/soft_aes.h"
+#include "crypto/randomx/instruction.hpp"
+#include "crypto/randomx/common.hpp"
+#include "crypto/rx/Profiler.h"
+
+#include "backend/cpu/Cpu.h"
+
+#ifdef XMRIG_RISCV
+#include "crypto/randomx/aes_hash_rv64_vector.hpp"
+#include "crypto/randomx/aes_hash_rv64_zvkned.hpp"
+#endif
 
 #define AES_HASH_1R_STATE0 0xd7983aad, 0xcc82db47, 0x9fa856de, 0x92b52c0d
 #define AES_HASH_1R_STATE1 0xace78057, 0xf59e125a, 0x15c7b798, 0x338d996e
@@ -56,14 +66,27 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 	Hashing throughput: >20 GiB/s per CPU core with hardware AES
 */
 template<int softAes>
-void hashAes1Rx4(const void *input, size_t inputSize, void *hash) {
+void hashAes1Rx4(const void *input, size_t inputSize, void *hash)
+{
+#ifdef XMRIG_RISCV
+	if (xmrig::Cpu::info()->hasAES()) {
+		hashAes1Rx4_zvkned(input, inputSize, hash);
+		return;
+	}
+
+	if (xmrig::Cpu::info()->hasRISCV_Vector()) {
+		hashAes1Rx4_RVV(input, inputSize, hash);
+		return;
+	}
+#endif
+
 	const uint8_t* inptr = (uint8_t*)input;
 	const uint8_t* inputEnd = inptr + inputSize;
 
 	rx_vec_i128 state0, state1, state2, state3;
 	rx_vec_i128 in0, in1, in2, in3;
 
-	//intial state
+	//initial state
 	state0 = rx_set_int_vec_i128(AES_HASH_1R_STATE0);
 	state1 = rx_set_int_vec_i128(AES_HASH_1R_STATE1);
 	state2 = rx_set_int_vec_i128(AES_HASH_1R_STATE2);
@@ -124,7 +147,20 @@ template void hashAes1Rx4<true>(const void *input, size_t inputSize, void *hash)
 	calls to this function.
 */
 template<int softAes>
-void fillAes1Rx4(void *state, size_t outputSize, void *buffer) {
+void fillAes1Rx4(void *state, size_t outputSize, void *buffer)
+{
+#ifdef XMRIG_RISCV
+	if (xmrig::Cpu::info()->hasAES()) {
+		fillAes1Rx4_zvkned(state, outputSize, buffer);
+		return;
+	}
+
+	if (xmrig::Cpu::info()->hasRISCV_Vector()) {
+		fillAes1Rx4_RVV(state, outputSize, buffer);
+		return;
+	}
+#endif
+
 	const uint8_t* outptr = (uint8_t*)buffer;
 	const uint8_t* outputEnd = outptr + outputSize;
 
@@ -164,8 +200,24 @@ void fillAes1Rx4(void *state, size_t outputSize, void *buffer) {
 template void fillAes1Rx4<true>(void *state, size_t outputSize, void *buffer);
 template void fillAes1Rx4<false>(void *state, size_t outputSize, void *buffer);
 
+static constexpr randomx::Instruction inst{ 0xFF, 7, 7, 0xFF, 0xFFFFFFFFU };
+alignas(16) static const randomx::Instruction inst_mask[2] = { inst, inst };
+
 template<int softAes>
-void fillAes4Rx4(void *state, size_t outputSize, void *buffer) {
+void fillAes4Rx4(void *state, size_t outputSize, void *buffer)
+{
+#ifdef XMRIG_RISCV
+	if (xmrig::Cpu::info()->hasAES()) {
+		fillAes4Rx4_zvkned(state, outputSize, buffer);
+		return;
+	}
+
+	if (xmrig::Cpu::info()->hasRISCV_Vector()) {
+		fillAes4Rx4_RVV(state, outputSize, buffer);
+		return;
+	}
+#endif
+
 	const uint8_t* outptr = (uint8_t*)buffer;
 	const uint8_t* outputEnd = outptr + outputSize;
 
@@ -186,32 +238,42 @@ void fillAes4Rx4(void *state, size_t outputSize, void *buffer) {
 	state2 = rx_load_vec_i128((rx_vec_i128*)state + 2);
 	state3 = rx_load_vec_i128((rx_vec_i128*)state + 3);
 
-	while (outptr < outputEnd) {
-		state0 = aesdec<softAes>(state0, key0);
-		state1 = aesenc<softAes>(state1, key0);
-		state2 = aesdec<softAes>(state2, key4);
-		state3 = aesenc<softAes>(state3, key4);
+#define TRANSFORM do { \
+	state0 = aesdec<softAes>(state0, key0); \
+	state1 = aesenc<softAes>(state1, key0); \
+	state2 = aesdec<softAes>(state2, key4); \
+	state3 = aesenc<softAes>(state3, key4); \
+	state0 = aesdec<softAes>(state0, key1); \
+	state1 = aesenc<softAes>(state1, key1); \
+	state2 = aesdec<softAes>(state2, key5); \
+	state3 = aesenc<softAes>(state3, key5); \
+	state0 = aesdec<softAes>(state0, key2); \
+	state1 = aesenc<softAes>(state1, key2); \
+	state2 = aesdec<softAes>(state2, key6); \
+	state3 = aesenc<softAes>(state3, key6); \
+	state0 = aesdec<softAes>(state0, key3); \
+	state1 = aesenc<softAes>(state1, key3); \
+	state2 = aesdec<softAes>(state2, key7); \
+	state3 = aesenc<softAes>(state3, key7); \
+} while (0)
 
-		state0 = aesdec<softAes>(state0, key1);
-		state1 = aesenc<softAes>(state1, key1);
-		state2 = aesdec<softAes>(state2, key5);
-		state3 = aesenc<softAes>(state3, key5);
-
-		state0 = aesdec<softAes>(state0, key2);
-		state1 = aesenc<softAes>(state1, key2);
-		state2 = aesdec<softAes>(state2, key6);
-		state3 = aesenc<softAes>(state3, key6);
-
-		state0 = aesdec<softAes>(state0, key3);
-		state1 = aesenc<softAes>(state1, key3);
-		state2 = aesdec<softAes>(state2, key7);
-		state3 = aesenc<softAes>(state3, key7);
-
+	for (int i = 0; i < 2; ++i, outptr += 64) {
+		TRANSFORM;
 		rx_store_vec_i128((rx_vec_i128*)outptr + 0, state0);
 		rx_store_vec_i128((rx_vec_i128*)outptr + 1, state1);
 		rx_store_vec_i128((rx_vec_i128*)outptr + 2, state2);
 		rx_store_vec_i128((rx_vec_i128*)outptr + 3, state3);
+	}
 
+	static_assert(sizeof(inst_mask) == sizeof(rx_vec_i128), "Incorrect inst_mask size");
+	const rx_vec_i128 mask = *reinterpret_cast<const rx_vec_i128*>(inst_mask);
+
+	while (outptr < outputEnd) {
+		TRANSFORM;
+		rx_store_vec_i128((rx_vec_i128*)outptr + 0, rx_and_vec_i128(state0, mask));
+		rx_store_vec_i128((rx_vec_i128*)outptr + 1, rx_and_vec_i128(state1, mask));
+		rx_store_vec_i128((rx_vec_i128*)outptr + 2, rx_and_vec_i128(state2, mask));
+		rx_store_vec_i128((rx_vec_i128*)outptr + 3, rx_and_vec_i128(state3, mask));
 		outptr += 64;
 	}
 }
@@ -219,9 +281,33 @@ void fillAes4Rx4(void *state, size_t outputSize, void *buffer) {
 template void fillAes4Rx4<true>(void *state, size_t outputSize, void *buffer);
 template void fillAes4Rx4<false>(void *state, size_t outputSize, void *buffer);
 
+#ifdef XMRIG_VAES
+void hashAndFillAes1Rx4_VAES512(void *scratchpad, size_t scratchpadSize, void *hash, void* fill_state);
+#endif
+
 template<int softAes, int unroll>
-void hashAndFillAes1Rx4(void *scratchpad, size_t scratchpadSize, void *hash, void* fill_state) {
+void hashAndFillAes1Rx4(void *scratchpad, size_t scratchpadSize, void *hash, void* fill_state)
+{
 	PROFILE_SCOPE(RandomX_AES);
+
+#ifdef XMRIG_RISCV
+	if (xmrig::Cpu::info()->hasAES()) {
+		hashAndFillAes1Rx4_zvkned(scratchpad, scratchpadSize, hash, fill_state);
+		return;
+	}
+
+	if (xmrig::Cpu::info()->hasRISCV_Vector()) {
+		hashAndFillAes1Rx4_RVV(scratchpad, scratchpadSize, hash, fill_state);
+		return;
+	}
+#endif
+
+#ifdef XMRIG_VAES
+	if (xmrig::Cpu::info()->arch() == xmrig::ICpuInfo::ARCH_ZEN5) {
+		hashAndFillAes1Rx4_VAES512(scratchpad, scratchpadSize, hash, fill_state);
+		return;
+	}
+#endif
 
 	uint8_t* scratchpadPtr = (uint8_t*)scratchpad;
 	const uint8_t* scratchpadEnd = scratchpadPtr + scratchpadSize;
@@ -370,43 +456,54 @@ hashAndFillAes1Rx4_impl* softAESImpl = &hashAndFillAes1Rx4<1,1>;
 
 void SelectSoftAESImpl(size_t threadsCount)
 {
-  constexpr int test_length_ms = 100;
-  const std::vector<hashAndFillAes1Rx4_impl *> impl = {
-    &hashAndFillAes1Rx4<1,1>,
-    &hashAndFillAes1Rx4<2,1>,
-    &hashAndFillAes1Rx4<2,2>,
-    &hashAndFillAes1Rx4<2,4>,
-  };
-  size_t fast_idx = 0;
-  double fast_speed = 0.0;
-  for (size_t run = 0; run < 3; ++run) {
-    for (size_t i = 0; i < impl.size(); ++i) {
-      const uint64_t t1 = xmrig::Chrono::highResolutionMSecs();
-      std::vector<uint32_t> count(threadsCount, 0);
-      std::vector<std::thread> threads;
-      for (size_t t = 0; t < threadsCount; ++t) {
-        threads.emplace_back([&, t]() {
-          std::vector<uint8_t> scratchpad(10 * 1024);
-          alignas(16) uint8_t hash[64] = {};
-          alignas(16) uint8_t state[64] = {};
-          do {
-          (*impl[i])(scratchpad.data(), scratchpad.size(), hash, state);
-          ++count[t];
-          } while (xmrig::Chrono::highResolutionMSecs() - t1 < test_length_ms);
-        });
-      }
-      uint32_t total = 0;
-      for (size_t t = 0; t < threadsCount; ++t) {
-        threads[t].join();
-        total += count[t];
-      }
-      const uint64_t t2 = xmrig::Chrono::highResolutionMSecs();
-      const double speed = total * 1e3 / (t2 - t1);
-      if (speed > fast_speed) {
-        fast_idx = i;
-        fast_speed = speed;
-      }
-    }
-  }
-  softAESImpl = impl[fast_idx];
+	constexpr uint64_t test_length_ms = 100;
+
+	const std::array<hashAndFillAes1Rx4_impl *, 4> impl = {
+		&hashAndFillAes1Rx4<1,1>,
+		&hashAndFillAes1Rx4<2,1>,
+		&hashAndFillAes1Rx4<2,2>,
+		&hashAndFillAes1Rx4<2,4>,
+	};
+
+	size_t fast_idx = 0;
+	double fast_speed = 0.0;
+
+	for (size_t run = 0; run < 3; ++run) {
+		for (size_t i = 0; i < impl.size(); ++i) {
+			const double t1 = xmrig::Chrono::highResolutionMSecs();
+
+			std::vector<uint32_t> count(threadsCount, 0);
+			std::vector<std::thread> threads;
+
+			for (size_t t = 0; t < threadsCount; ++t) {
+				threads.emplace_back([&, t]() {
+					std::vector<uint8_t> scratchpad(10 * 1024);
+
+					alignas(16) uint8_t hash[64] = {};
+					alignas(16) uint8_t state[64] = {};
+
+					do {
+						(*impl[i])(scratchpad.data(), scratchpad.size(), hash, state);
+						++count[t];
+					} while (xmrig::Chrono::highResolutionMSecs() - t1 < test_length_ms);
+				});
+			}
+
+			uint32_t total = 0;
+
+			for (size_t t = 0; t < threadsCount; ++t) {
+				threads[t].join();
+				total += count[t];
+			}
+
+			const double t2 = xmrig::Chrono::highResolutionMSecs();
+			const double speed = total * 1e3 / (t2 - t1);
+
+			if (speed > fast_speed) {
+				fast_idx = i;
+				fast_speed = speed;
+			}
+		}
+	}
+	softAESImpl = impl[fast_idx];
 }

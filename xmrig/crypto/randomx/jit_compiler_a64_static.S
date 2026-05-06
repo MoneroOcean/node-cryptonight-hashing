@@ -31,7 +31,7 @@
 #define DECL(x) x
 #endif
 
-	.arch armv8-a
+	.arch armv8-a+crypto
 	.text
 	.global DECL(randomx_program_aarch64)
 	.global DECL(randomx_program_aarch64_main_loop)
@@ -41,9 +41,18 @@
 	.global DECL(randomx_program_aarch64_cacheline_align_mask1)
 	.global DECL(randomx_program_aarch64_cacheline_align_mask2)
 	.global DECL(randomx_program_aarch64_update_spMix1)
+	.global DECL(randomx_program_aarch64_v2_FE_mix)
+	.global DECL(randomx_program_aarch64_v1_FE_mix)
+	.global DECL(randomx_program_aarch64_v2_FE_mix_soft_aes)
+	.global DECL(randomx_program_aarch64_aes_lut_pointers)
 	.global DECL(randomx_program_aarch64_vm_instructions_end_light)
+	.global DECL(randomx_program_aarch64_vm_instructions_end_light_tweak)
 	.global DECL(randomx_program_aarch64_light_cacheline_align_mask)
 	.global DECL(randomx_program_aarch64_light_dataset_offset)
+	.global DECL(randomx_program_aarch64_vm_instructions_end_v1)
+	.global DECL(randomx_program_aarch64_vm_instructions_end_v2)
+	.global DECL(randomx_program_aarch64_vm_instructions_end_light_v1)
+	.global DECL(randomx_program_aarch64_vm_instructions_end_light_v2)
 	.global DECL(randomx_init_dataset_aarch64)
 	.global DECL(randomx_init_dataset_aarch64_end)
 	.global DECL(randomx_calc_dataset_item_aarch64)
@@ -72,9 +81,9 @@
 # x15 -> "r7"
 # x16 -> spAddr0
 # x17 -> spAddr1
-# x18 -> temporary
+# x18 -> unused (platform register, don't touch it)
 # x19 -> temporary
-# x20 -> literal for IMUL_RCP
+# x20 -> temporary
 # x21 -> literal for IMUL_RCP
 # x22 -> literal for IMUL_RCP
 # x23 -> literal for IMUL_RCP
@@ -100,16 +109,16 @@
 # v26 -> "a2"
 # v27 -> "a3"
 # v28 -> temporary
-# v29 -> E 'and' mask = 0x00ffffffffffffff00ffffffffffffff
-# v30 -> E 'or' mask  = 0x3*00000000******3*00000000******
-# v31 -> scale mask   = 0x81f000000000000081f0000000000000
+# v29 -> E 'and' mask = 0x00ffffffffffffff'00ffffffffffffff
+# v30 -> E 'or' mask  = 0x3*00000000******'3*00000000******
+# v31 -> scale mask   = 0x80f0000000000000'80f0000000000000
 
 	.balign 4
 DECL(randomx_program_aarch64):
 	# Save callee-saved registers
 	sub	sp, sp, 192
 	stp	x16, x17, [sp]
-	stp	x18, x19, [sp, 16]
+	str	x19, [sp, 16]
 	stp	x20, x21, [sp, 32]
 	stp	x22, x23, [sp, 48]
 	stp	x24, x25, [sp, 64]
@@ -142,17 +151,14 @@ DECL(randomx_program_aarch64):
 	ldp	q26, q27, [x0, 224]
 
 	# Load E 'and' mask
-	mov	x16, 0x00FFFFFFFFFFFFFF
-	ins	v29.d[0], x16
-	ins	v29.d[1], x16
+	movi	v29.2d, #0x00FFFFFFFFFFFFFF
 
 	# Load E 'or' mask (stored in reg.f[0])
 	ldr	q30, [x0, 64]
 
 	# Load scale mask
 	mov	x16, 0x80f0000000000000
-	ins	v31.d[0], x16
-	ins	v31.d[1], x16
+	dup	v31.2d, x16
 
 	# Read fpcr
 	mrs	x8, fpcr
@@ -162,45 +168,31 @@ DECL(randomx_program_aarch64):
 	str	x0, [sp, -16]!
 
 	# Read literals
-	ldr	x0, literal_x0
-	ldr	x11, literal_x11
-	ldr	x20, literal_x20
-	ldr	x21, literal_x21
-	ldr	x22, literal_x22
-	ldr	x23, literal_x23
-	ldr	x24, literal_x24
-	ldr	x25, literal_x25
-	ldr	x26, literal_x26
-	ldr	x27, literal_x27
-	ldr	x28, literal_x28
-	ldr	x29, literal_x29
-	ldr	x30, literal_x30
+	adr	x30, literal_v0
+	ldp	q0, q1, [x30]
+	ldp	q2, q3, [x30, 32]
+	ldp	q4, q5, [x30, 64]
+	ldp	q6, q7, [x30, 96]
+	ldp	q8, q9, [x30, 128]
+	ldp	q10, q11, [x30, 160]
+	ldp	q12, q13, [x30, 192]
+	ldp	q14, q15, [x30, 224]
 
-	ldr	q0, literal_v0
-	ldr	q1, literal_v1
-	ldr	q2, literal_v2
-	ldr	q3, literal_v3
-	ldr	q4, literal_v4
-	ldr	q5, literal_v5
-	ldr	q6, literal_v6
-	ldr	q7, literal_v7
-	ldr	q8, literal_v8
-	ldr	q9, literal_v9
-	ldr	q10, literal_v10
-	ldr	q11, literal_v11
-	ldr	q12, literal_v12
-	ldr	q13, literal_v13
-	ldr	q14, literal_v14
-	ldr	q15, literal_v15
+	ldp	x0, x11, [x30, -96]	// literal_x0
+	ldp	x21, x22, [x30, -80]	// literal_x21
+	ldp	x23, x24, [x30, -64]	// literal_x23
+	ldp	x25, x26, [x30, -48]	// literal_x25
+	ldp	x27, x28, [x30, -32]	// literal_x27
+	ldp	x29, x30, [x30, -16]	// literal_x29
 
 DECL(randomx_program_aarch64_main_loop):
 	# spAddr0 = spMix1 & ScratchpadL3Mask64;
 	# spAddr1 = (spMix1 >> 32) & ScratchpadL3Mask64;
-	lsr	x18, x10, 32
+	lsr	x20, x10, 32
 
 	# Actual mask will be inserted by JIT compiler
 	and	w16, w10, 1
-	and	w17, w18, 1
+	and	w17, w20, 1
 
 	# x16 = scratchpad + spAddr0
 	# x17 = scratchpad + spAddr1
@@ -208,54 +200,45 @@ DECL(randomx_program_aarch64_main_loop):
 	add	x17, x17, x2
 
 	# xor integer registers with scratchpad data (spAddr0)
-	ldp	x18, x19, [x16]
-	eor	x4, x4, x18
+	ldp	x20, x19, [x16]
+	eor	x4, x4, x20
 	eor	x5, x5, x19
-	ldp	x18, x19, [x16, 16]
-	eor	x6, x6, x18
+	ldp	x20, x19, [x16, 16]
+	eor	x6, x6, x20
 	eor	x7, x7, x19
-	ldp	x18, x19, [x16, 32]
-	eor	x12, x12, x18
+	ldp	x20, x19, [x16, 32]
+	eor	x12, x12, x20
 	eor	x13, x13, x19
-	ldp	x18, x19, [x16, 48]
-	eor	x14, x14, x18
+	ldp	x20, x19, [x16, 48]
+	eor	x14, x14, x20
 	eor	x15, x15, x19
 
 	# Load group F registers (spAddr1)
-	ldpsw	x18, x19, [x17]
-	ins	v16.d[0], x18
-	ins	v16.d[1], x19
-	ldpsw	x18, x19, [x17, 8]
-	ins	v17.d[0], x18
-	ins	v17.d[1], x19
-	ldpsw	x18, x19, [x17, 16]
-	ins	v18.d[0], x18
-	ins	v18.d[1], x19
-	ldpsw	x18, x19, [x17, 24]
-	ins	v19.d[0], x18
-	ins	v19.d[1], x19
+	ldr	q17, [x17]
+	sxtl	v16.2d, v17.2s
 	scvtf	v16.2d, v16.2d
+	sxtl2	v17.2d, v17.4s
 	scvtf	v17.2d, v17.2d
+
+	ldr q19, [x17, 16]
+	sxtl	v18.2d, v19.2s
 	scvtf	v18.2d, v18.2d
+	sxtl2	v19.2d, v19.4s
 	scvtf	v19.2d, v19.2d
 
 	# Load group E registers (spAddr1)
-	ldpsw	x18, x19, [x17, 32]
-	ins	v20.d[0], x18
-	ins	v20.d[1], x19
-	ldpsw	x18, x19, [x17, 40]
-	ins	v21.d[0], x18
-	ins	v21.d[1], x19
-	ldpsw	x18, x19, [x17, 48]
-	ins	v22.d[0], x18
-	ins	v22.d[1], x19
-	ldpsw	x18, x19, [x17, 56]
-	ins	v23.d[0], x18
-	ins	v23.d[1], x19
+	ldr	q21, [x17, 32]
+	sxtl	v20.2d, v21.2s
 	scvtf	v20.2d, v20.2d
+	sxtl2	v21.2d, v21.4s
 	scvtf	v21.2d, v21.2d
+
+	ldr	q23, [x17, 48]
+	sxtl	v22.2d, v23.2s
 	scvtf	v22.2d, v22.2d
+	sxtl2	v23.2d, v23.4s
 	scvtf	v23.2d, v23.2d
+
 	and	v20.16b, v20.16b, v29.16b
 	and	v21.16b, v21.16b, v29.16b
 	and	v22.16b, v22.16b, v29.16b
@@ -268,12 +251,11 @@ DECL(randomx_program_aarch64_main_loop):
 	# Execute VM instructions
 DECL(randomx_program_aarch64_vm_instructions):
 
-	# 16 KB buffer for generated instructions
-	.fill 4096,4,0
+	# 24 KB buffer for generated instructions
+	.fill 6144,4,0
 
 literal_x0:  .fill 1,8,0
 literal_x11: .fill 1,8,0
-literal_x20: .fill 1,8,0
 literal_x21: .fill 1,8,0
 literal_x22: .fill 1,8,0
 literal_x23: .fill 1,8,0
@@ -304,25 +286,27 @@ literal_v14: .fill 2,8,0
 literal_v15: .fill 2,8,0
 
 DECL(randomx_program_aarch64_vm_instructions_end):
+	# Calculate dataset pointer for dataset read
+	# Do it here to break false dependency from readReg2 and readReg3 (see next line)
+	lsr	x10, x9, 32
 
 	# mx ^= r[readReg2] ^ r[readReg3];
-	eor	x9, x9, x18
+	eor	x9, x9, x20
 
 	# Calculate dataset pointer for dataset prefetch
-	mov	w18, w9
-DECL(randomx_program_aarch64_cacheline_align_mask1):
-	# Actual mask will be inserted by JIT compiler
-	and	x18, x18, 1
-	add	x18, x18, x1
-
-	# Prefetch dataset data
-	prfm	pldl2strm, [x18]
+	mov	w20, w9
 
 	# mx <-> ma
 	ror	x9, x9, 32
 
-	# Calculate dataset pointer for dataset read
-	mov	w10, w9
+DECL(randomx_program_aarch64_cacheline_align_mask1):
+	# Actual mask will be inserted by JIT compiler
+	and	x20, x20, 1
+	add	x20, x20, x1
+
+	# Prefetch dataset data
+	prfm	pldl2strm, [x20]
+
 DECL(randomx_program_aarch64_cacheline_align_mask2):
 	# Actual mask will be inserted by JIT compiler
 	and	x10, x10, 1
@@ -330,17 +314,17 @@ DECL(randomx_program_aarch64_cacheline_align_mask2):
 
 DECL(randomx_program_aarch64_xor_with_dataset_line):
 	# xor integer registers with dataset data
-	ldp	x18, x19, [x10]
-	eor	x4, x4, x18
+	ldp	x20, x19, [x10]
+	eor	x4, x4, x20
 	eor	x5, x5, x19
-	ldp	x18, x19, [x10, 16]
-	eor	x6, x6, x18
+	ldp	x20, x19, [x10, 16]
+	eor	x6, x6, x20
 	eor	x7, x7, x19
-	ldp	x18, x19, [x10, 32]
-	eor	x12, x12, x18
+	ldp	x20, x19, [x10, 32]
+	eor	x12, x12, x20
 	eor	x13, x13, x19
-	ldp	x18, x19, [x10, 48]
-	eor	x14, x14, x18
+	ldp	x20, x19, [x10, 48]
+	eor	x14, x14, x20
 	eor	x15, x15, x19
 
 DECL(randomx_program_aarch64_update_spMix1):
@@ -353,11 +337,92 @@ DECL(randomx_program_aarch64_update_spMix1):
 	stp	x12, x13, [x17, 32]
 	stp	x14, x15, [x17, 48]
 
-	# xor group F and group E registers
+	# RandomX v2 AES tweak (mix group F and group E registers using AES)
+DECL(randomx_program_aarch64_v2_FE_mix):
+
+	# Jump to v1 FE mix code if we're running RandomX v1
+	# JIT compiler will write a "movi v28.4s, 0" (set v28 to all 0) here if we're running RandomX v2
+	# Or, JIT compiler will write a "b randomx_program_aarch64_v2_FE_mix_soft_aes" if we're running RandomX v2 with soft AES
+	b DECL(randomx_program_aarch64_v1_FE_mix)
+
+	# f0 = aesenc(f0, e0), f1 = aesdec(f1, e0), f2 = aesenc(f2, e0), f3 = aesdec(f3, e0)
+
+	aese	v16.16b, v28.16b
+	aesd	v17.16b, v28.16b
+	aese	v18.16b, v28.16b
+	aesd	v19.16b, v28.16b
+
+	aesmc	v16.16b, v16.16b
+	aesimc	v17.16b, v17.16b
+	aesmc	v18.16b, v18.16b
+	aesimc	v19.16b, v19.16b
+
+	eor	v16.16b, v16.16b, v20.16b
+	eor	v17.16b, v17.16b, v20.16b
+	eor	v18.16b, v18.16b, v20.16b
+	eor	v19.16b, v19.16b, v20.16b
+
+	# f0 = aesenc(f0, e1), f1 = aesdec(f1, e1), f2 = aesenc(f2, e1), f3 = aesdec(f3, e1)
+
+	aese	v16.16b, v28.16b
+	aesd	v17.16b, v28.16b
+	aese	v18.16b, v28.16b
+	aesd	v19.16b, v28.16b
+
+	aesmc	v16.16b, v16.16b
+	aesimc	v17.16b, v17.16b
+	aesmc	v18.16b, v18.16b
+	aesimc	v19.16b, v19.16b
+
+	eor	v16.16b, v16.16b, v21.16b
+	eor	v17.16b, v17.16b, v21.16b
+	eor	v18.16b, v18.16b, v21.16b
+	eor	v19.16b, v19.16b, v21.16b
+
+	# f0 = aesenc(f0, e2), f1 = aesdec(f1, e2), f2 = aesenc(f2, e2), f3 = aesdec(f3, e2)
+
+	aese	v16.16b, v28.16b
+	aesd	v17.16b, v28.16b
+	aese	v18.16b, v28.16b
+	aesd	v19.16b, v28.16b
+
+	aesmc	v16.16b, v16.16b
+	aesimc	v17.16b, v17.16b
+	aesmc	v18.16b, v18.16b
+	aesimc	v19.16b, v19.16b
+
+	eor	v16.16b, v16.16b, v22.16b
+	eor	v17.16b, v17.16b, v22.16b
+	eor	v18.16b, v18.16b, v22.16b
+	eor	v19.16b, v19.16b, v22.16b
+
+	# f0 = aesenc(f0, e3), f1 = aesdec(f1, e3), f2 = aesenc(f2, e3), f3 = aesdec(f3, e3)
+
+	aese	v16.16b, v28.16b
+	aesd	v17.16b, v28.16b
+	aese	v18.16b, v28.16b
+	aesd	v19.16b, v28.16b
+
+	aesmc	v16.16b, v16.16b
+	aesimc	v17.16b, v17.16b
+	aesmc	v18.16b, v18.16b
+	aesimc	v19.16b, v19.16b
+
+	eor	v16.16b, v16.16b, v23.16b
+	eor	v17.16b, v17.16b, v23.16b
+	eor	v18.16b, v18.16b, v23.16b
+	eor	v19.16b, v19.16b, v23.16b
+
+	# Skip v1 FE mix code because we already did v2 FE mix
+	b randomx_program_aarch64_FE_store
+
+DECL(randomx_program_aarch64_v1_FE_mix):
 	eor	v16.16b, v16.16b, v20.16b
 	eor	v17.16b, v17.16b, v21.16b
 	eor	v18.16b, v18.16b, v22.16b
 	eor	v19.16b, v19.16b, v23.16b
+
+randomx_program_aarch64_FE_store:
 
 	# Store FP registers to scratchpad (spAddr0)
 	stp	q16, q17, [x16, 0]
@@ -383,7 +448,7 @@ DECL(randomx_program_aarch64_update_spMix1):
 
 	# Restore callee-saved registers
 	ldp	x16, x17, [sp]
-	ldp	x18, x19, [sp, 16]
+	ldr	x19, [sp, 16]
 	ldp	x20, x21, [sp, 32]
 	ldp	x22, x23, [sp, 48]
 	ldp	x24, x25, [sp, 64]
@@ -403,8 +468,15 @@ DECL(randomx_program_aarch64_vm_instructions_end_light):
 	stp	x0, x1, [sp, 64]
 	stp	x2, x30, [sp, 80]
 
+	lsr	x2, x9, 32
+
+DECL(randomx_program_aarch64_light_cacheline_align_mask):
+	# Actual mask will be inserted by JIT compiler
+	and	w2, w2, 1
+
+DECL(randomx_program_aarch64_vm_instructions_end_light_tweak):
 	# mx ^= r[readReg2] ^ r[readReg3];
-	eor	x9, x9, x18
+	eor	x9, x9, x20
 
 	# mx <-> ma
 	ror	x9, x9, 32
@@ -414,10 +486,6 @@ DECL(randomx_program_aarch64_vm_instructions_end_light):
 
 	# x1 -> pointer to output
 	mov	x1, sp
-
-DECL(randomx_program_aarch64_light_cacheline_align_mask):
-	# Actual mask will be inserted by JIT compiler
-	and	w2, w9, 1
 
 	# x2 -> item number
 	lsr	x2, x2, 6
@@ -436,6 +504,237 @@ DECL(randomx_program_aarch64_light_dataset_offset):
 
 	b	DECL(randomx_program_aarch64_xor_with_dataset_line)
 
+DECL(randomx_program_aarch64_vm_instructions_end_v1):
+	lsr	x10, x9, 32
+	eor	x9, x9, x20
+	mov	w20, w9
+	ror	x9, x9, 32
+
+DECL(randomx_program_aarch64_vm_instructions_end_v2):
+	lsr	x10, x9, 32
+	ror	x9, x9, 32
+	eor	x9, x9, x20
+	mov	w20, w9
+
+DECL(randomx_program_aarch64_vm_instructions_end_light_v1):
+	eor	x9, x9, x20
+	ror	x9, x9, 32
+
+DECL(randomx_program_aarch64_vm_instructions_end_light_v2):
+	ror	x9, x9, 32
+	eor	x9, x9, x20
+
+DECL(randomx_program_aarch64_v2_FE_mix_soft_aes):
+	sub	sp, sp, 176
+
+	stp	x0, x1, [sp]
+	stp	x2, x3, [sp, 16]
+	stp	x4, x5, [sp, 32]
+	stp	x6, x7, [sp, 48]
+	stp	x8, x9, [sp, 64]
+	stp	x10, x11, [sp, 80]
+	stp	x12, x13, [sp, 96]
+	stp	x14, x15, [sp, 112]
+	stp	x16, x30, [sp, 128]
+	stp	q0, q1, [sp, 144]
+
+	adr	x19, DECL(randomx_program_aarch64_aes_lut_pointers)
+	ldp	x19, x20, [x19]
+
+	# f0 = aesenc(f0, e0), f0 = aesenc(f0, e1), f0 = aesenc(f0, e2), f0 = aesenc(f0, e3)
+	mov	v0.16b, v16.16b
+	mov	v1.16b, v20.16b
+	bl	randomx_soft_aesenc
+	mov	v1.16b, v21.16b
+	bl	randomx_soft_aesenc
+	mov	v1.16b, v22.16b
+	bl	randomx_soft_aesenc
+	mov	v1.16b, v23.16b
+	bl	randomx_soft_aesenc
+	mov	v16.16b, v0.16b
+
+	# f1 = aesdec(f1, e0), f1 = aesdec(f1, e1), f1 = aesdec(f1, e2), f1 = aesdec(f1, e3)
+	mov	v0.16b, v17.16b
+	mov	v1.16b, v20.16b
+	bl	randomx_soft_aesdec
+	mov	v1.16b, v21.16b
+	bl	randomx_soft_aesdec
+	mov	v1.16b, v22.16b
+	bl	randomx_soft_aesdec
+	mov	v1.16b, v23.16b
+	bl	randomx_soft_aesdec
+	mov	v17.16b, v0.16b
+
+	# f2 = aesenc(f2, e0), f2 = aesenc(f2, e1), f2 = aesenc(f2, e2), f2 = aesenc(f2, e3)
+	mov	v0.16b, v18.16b
+	mov	v1.16b, v20.16b
+	bl	randomx_soft_aesenc
+	mov	v1.16b, v21.16b
+	bl	randomx_soft_aesenc
+	mov	v1.16b, v22.16b
+	bl	randomx_soft_aesenc
+	mov	v1.16b, v23.16b
+	bl	randomx_soft_aesenc
+	mov	v18.16b, v0.16b
+
+	# f3 = aesdec(f3, e0), f3 = aesdec(f3, e1), f3 = aesdec(f3, e2), f3 = aesdec(f3, e3)
+	mov	v0.16b, v19.16b
+	mov	v1.16b, v20.16b
+	bl	randomx_soft_aesdec
+	mov	v1.16b, v21.16b
+	bl	randomx_soft_aesdec
+	mov	v1.16b, v22.16b
+	bl	randomx_soft_aesdec
+	mov	v1.16b, v23.16b
+	bl	randomx_soft_aesdec
+	mov	v19.16b, v0.16b
+
+	ldp	x0, x1, [sp]
+	ldp	x2, x3, [sp, 16]
+	ldp	x4, x5, [sp, 32]
+	ldp	x6, x7, [sp, 48]
+	ldp	x8, x9, [sp, 64]
+	ldp	x10, x11, [sp, 80]
+	ldp	x12, x13, [sp, 96]
+	ldp	x14, x15, [sp, 112]
+	ldp	x16, x30, [sp, 128]
+	ldp	q0, q1, [sp, 144]
+
+	add	sp, sp, 176
+
+	b randomx_program_aarch64_FE_store
+	
+
+randomx_soft_aesenc:
+	umov	w4, v0.b[5]
+	umov	w1, v0.b[10]
+	umov	w12, v0.b[15]
+	umov	w9, v0.b[9]
+	umov	w2, v0.b[14]
+	umov	w11, v0.b[3]
+	umov	w5, v0.b[0]
+	umov	w16, v0.b[4]
+	add	x4, x4, 256
+	add	x1, x1, 512
+	add	x12, x12, 768
+	umov	w3, v0.b[13]
+	umov	w8, v0.b[2]
+	umov	w7, v0.b[7]
+	add	x9, x9, 256
+	add	x2, x2, 512
+	add	x11, x11, 768
+	ldr	w10, [x19, x4, lsl 2]
+	ldr	w15, [x19, x5, lsl 2]
+	umov	w13, v0.b[8]
+	ldr	w14, [x19, x12, lsl 2]
+	umov	w6, v0.b[1]
+	ldr	w1, [x19, x1, lsl 2]
+	eor	w10, w10, w15
+	ldr	w2, [x19, x2, lsl 2]
+	umov	w5, v0.b[6]
+	ldr	w9, [x19, x9, lsl 2]
+	umov	w4, v0.b[11]
+	ldr	w12, [x19, x16, lsl 2]
+	eor	w1, w1, w14
+	ldr	w11, [x19, x11, lsl 2]
+	eor	w1, w1, w10
+	add	x8, x8, 512
+	add	x3, x3, 256
+	add	x7, x7, 768
+	eor	w9, w9, w12
+	fmov	s28, w1
+	eor	w1, w2, w11
+	umov	w10, v0.b[12]
+	eor	w1, w1, w9
+	ldr	w3, [x19, x3, lsl 2]
+	add	x6, x6, 256
+	ldr	w9, [x19, x13, lsl 2]
+	ins	v28.s[1], w1
+	ldr	w2, [x19, x8, lsl 2]
+	add	x5, x5, 512
+	ldr	w7, [x19, x7, lsl 2]
+	add	x4, x4, 768
+	eor	w1, w3, w9
+	ldr	w3, [x19, x6, lsl 2]
+	eor	w2, w2, w7
+	ldr	w6, [x19, x10, lsl 2]
+	eor	w2, w2, w1
+	ldr	w1, [x19, x5, lsl 2]
+	ldr	w0, [x19, x4, lsl 2]
+	eor	w3, w3, w6
+	ins	v28.s[2], w2
+	eor	w0, w1, w0
+	eor	w0, w0, w3
+	ins	v28.s[3], w0
+	eor	v0.16b, v1.16b, v28.16b
+	ret
+
+randomx_soft_aesdec:
+	umov	w1, v0.b[10]
+	umov	w3, v0.b[7]
+	umov	w12, v0.b[13]
+	umov	w2, v0.b[14]
+	umov	w9, v0.b[11]
+	umov	w11, v0.b[1]
+	umov	w4, v0.b[0]
+	umov	w16, v0.b[4]
+	add	x3, x3, 768
+	add	x1, x1, 512
+	add	x12, x12, 256
+	umov	w8, v0.b[5]
+	umov	w6, v0.b[2]
+	umov	w7, v0.b[15]
+	add	x9, x9, 768
+	add	x2, x2, 512
+	add	x11, x11, 256
+	ldr	w15, [x20, x3, lsl 2]
+	ldr	w10, [x20, x4, lsl 2]
+	umov	w13, v0.b[8]
+	ldr	w14, [x20, x12, lsl 2]
+	umov	w5, v0.b[9]
+	ldr	w1, [x20, x1, lsl 2]
+	umov	w3, v0.b[6]
+	ldr	w12, [x20, x9, lsl 2]
+	umov	w4, v0.b[3]
+	ldr	w9, [x20, x16, lsl 2]
+	eor	w1, w1, w15
+	ldr	w2, [x20, x2, lsl 2]
+	eor	w10, w10, w14
+	ldr	w11, [x20, x11, lsl 2]
+	eor	w1, w1, w10
+	add	x8, x8, 256
+	add	x6, x6, 512
+	add	x7, x7, 768
+	eor	w2, w2, w12
+	fmov	s28, w1
+	eor	w1, w9, w11
+	eor	w1, w2, w1
+	umov	w9, v0.b[12]
+	ldr	w2, [x20, x13, lsl 2]
+	add	x5, x5, 256
+	ldr	w8, [x20, x8, lsl 2]
+	ins	v28.s[1], w1
+	ldr	w6, [x20, x6, lsl 2]
+	add	x3, x3, 512
+	ldr	w7, [x20, x7, lsl 2]
+	add	x4, x4, 768
+	eor	w2, w2, w8
+	ldr	w1, [x20, x9, lsl 2]
+	eor	w6, w6, w7
+	ldr	w3, [x20, x3, lsl 2]
+	eor	w2, w2, w6
+	ldr	w4, [x20, x4, lsl 2]
+	ldr	w5, [x20, x5, lsl 2]
+	ins	v28.s[2], w2
+	eor	w0, w1, w5
+	eor	w1, w3, w4
+	eor	w0, w0, w1
+	ins	v28.s[3], w0
+	eor	v0.16b, v1.16b, v28.16b
+	ret
+
+DECL(randomx_program_aarch64_aes_lut_pointers):
+	.fill 2, 8, 0
 
 
 # Input parameters
@@ -446,8 +745,8 @@ DECL(randomx_program_aarch64_light_dataset_offset):
 # x3 -> end item
 
 DECL(randomx_init_dataset_aarch64):
-	# Save x30 (return address)
-	str	x30, [sp, -16]!
+	# Save x20 (used as temporary, but must be saved to not break ABI) and x30 (return address)
+	stp	x20, x30, [sp, -16]!
 
 	# Load pointer to cache memory
 	ldr	x0, [x0]
@@ -459,8 +758,8 @@ DECL(randomx_init_dataset_aarch64_main_loop):
 	cmp	x2, x3
 	bne	DECL(randomx_init_dataset_aarch64_main_loop)
 
-	# Restore x30 (return address)
-	ldr	x30, [sp], 16
+	# Restore x20 and x30
+	ldp	x20, x30, [sp], 16
 
 	ret
 
@@ -492,42 +791,39 @@ DECL(randomx_calc_dataset_item_aarch64):
 	stp	x10, x11, [sp, 80]
 	stp	x12, x13, [sp, 96]
 
-	ldr	x12, superscalarMul0
+	adr	x7, superscalarMul0
+	# superscalarMul0, superscalarAdd1
+	ldp	x12, x13, [x7]
 
-	mov	x8, x0
-	mov	x9, x1
+	ldp	x8, x9, [sp]
 	mov	x10, x2
 
 	# rl[0] = (itemNumber + 1) * superscalarMul0;
 	madd	x0, x2, x12, x12
 
 	# rl[1] = rl[0] ^ superscalarAdd1;
-	ldr	x12, superscalarAdd1
-	eor	x1, x0, x12
+	eor	x1, x0, x13
 
 	# rl[2] = rl[0] ^ superscalarAdd2;
-	ldr	x12, superscalarAdd2
+	ldp	x12, x13, [x7, 16]
 	eor	x2, x0, x12
 
 	# rl[3] = rl[0] ^ superscalarAdd3;
-	ldr	x12, superscalarAdd3
-	eor	x3, x0, x12
+	eor	x3, x0, x13
 
 	# rl[4] = rl[0] ^ superscalarAdd4;
-	ldr	x12, superscalarAdd4
+	ldp	x12, x13, [x7, 32]
 	eor	x4, x0, x12
 
 	# rl[5] = rl[0] ^ superscalarAdd5;
-	ldr	x12, superscalarAdd5
-	eor	x5, x0, x12
+	eor	x5, x0, x13
 
 	# rl[6] = rl[0] ^ superscalarAdd6;
-	ldr	x12, superscalarAdd6
+	ldp	x12, x13, [x7, 48]
 	eor	x6, x0, x12
 
 	# rl[7] = rl[0] ^ superscalarAdd7;
-	ldr	x12, superscalarAdd7
-	eor	x7, x0, x12
+	eor	x7, x0, x13
 
 	b	DECL(randomx_calc_dataset_item_aarch64_prefetch)
 
