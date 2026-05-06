@@ -42,7 +42,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "crypto/randomx/superscalar.hpp"
 #include "crypto/randomx/virtual_memory.hpp"
 #include "crypto/randomx/soft_aes.h"
-#include "crypto/rx/Profiler.h"
+/* node-powhash local change start:
+ * Upstream includes crypto/rx/Profiler.h; this addon carries the profiler shim
+ * under base/tools and does not vendor the full crypto/rx layer.
+ */
+#include "base/tools/Profiler.h"
+/* node-powhash local change end */
 
 #ifdef XMRIG_FIX_RYZEN
 #   include "crypto/rx/RxFix.h"
@@ -352,10 +357,20 @@ namespace randomx {
 		generateProgramPrologue(prog, pcfg);
 
 		if (RandomX_CurrentConfig.Tweak_V2_PREFETCH) {
-			emit(codeReadDatasetV2, readDatasetV2Size, code, codePos);
+			/* node-powhash local change start:
+			 * Emit the runtime-patched v2 dataset-read snippet so MO variants
+			 * with smaller datasets keep x86 JIT correctness.
+			 */
+			emit(RandomX_CurrentConfig.codeReadDatasetV2Tweaked, RandomX_CurrentConfig.codeReadDatasetV2TweakedSize, code, codePos);
+			/* node-powhash local change end */
 		}
 		else {
-			emit(codeReadDataset, readDatasetSize, code, codePos);
+			/* node-powhash local change start:
+			 * Emit the runtime-patched v1 dataset-read snippet so MO variants
+			 * with smaller datasets keep x86 JIT correctness.
+			 */
+			emit(RandomX_CurrentConfig.codeReadDatasetTweaked, RandomX_CurrentConfig.codeReadDatasetTweakedSize, code, codePos);
+			/* node-powhash local change end */
 		}
 
 		generateProgramEpilogue(prog, pcfg);
@@ -856,7 +871,7 @@ namespace randomx {
 	void JitCompilerX86::h_ISUB_R(const Instruction& instr) {
 		uint8_t* const p = code;
 		uint32_t pos = codePos;
-		
+
 		const uint32_t src = instr.src;
 		const uint32_t dst = instr.dst;
 
@@ -1056,7 +1071,7 @@ namespace randomx {
 	void JitCompilerX86::h_IMUL_RCP(const Instruction& instr) {
 		uint8_t* const p = code;
 		uint32_t pos = codePos;
-		
+
 		uint64_t divisor = instr.getImm32();
 		if (!isZeroOrPowerOf2(divisor)) {
 			const uint32_t dst = instr.dst;

@@ -36,7 +36,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "crypto/randomx/soft_aes.h"
 #include "crypto/randomx/instruction.hpp"
 #include "crypto/randomx/common.hpp"
-#include "crypto/rx/Profiler.h"
+/* node-powhash local change start:
+ * Upstream includes crypto/rx/Profiler.h; this addon carries the profiler shim
+ * under base/tools and does not vendor the full crypto/rx layer.
+ */
+#include "base/tools/Profiler.h"
+/* node-powhash local change end */
 
 #include "backend/cpu/Cpu.h"
 

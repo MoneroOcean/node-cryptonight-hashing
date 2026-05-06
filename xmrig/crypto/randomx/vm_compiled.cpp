@@ -30,7 +30,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "crypto/randomx/vm_compiled.hpp"
 #include "crypto/randomx/common.hpp"
-#include "crypto/rx/Profiler.h"
+/* node-powhash local change start:
+ * Upstream includes crypto/rx/Profiler.h; this addon carries the profiler shim
+ * under base/tools and does not vendor the full crypto/rx layer.
+ */
+#include "base/tools/Profiler.h"
+/* node-powhash local change end */
 
 namespace randomx {
 
@@ -65,11 +70,19 @@ namespace randomx {
 		const uint8_t* p = mem.memory;
 
 		// dataset prefetch for the first iteration of the main loop
-		rx_prefetch_nta(p + (mem.ma & (RandomX_ConfigurationBase::DatasetBaseSize - 64)));
+		/* node-powhash local change start:
+		 * DatasetBaseSize is runtime-configurable for MO variants.
+		 */
+		rx_prefetch_nta(p + (mem.ma & (RandomX_CurrentConfig.DatasetBaseSize - 64)));
+		/* node-powhash local change end */
 
 		// dataset prefetch for the second iteration of the main loop (RandomX v2)
 		if (RandomX_CurrentConfig.Tweak_V2_PREFETCH) {
-			rx_prefetch_nta(p + (mem.mx & (RandomX_ConfigurationBase::DatasetBaseSize - 64)));
+			/* node-powhash local change start:
+			 * DatasetBaseSize is runtime-configurable for MO variants.
+			 */
+			rx_prefetch_nta(p + (mem.mx & (RandomX_CurrentConfig.DatasetBaseSize - 64)));
+			/* node-powhash local change end */
 		}
 
 		compiler.getProgramFunc()(reg, mem, scratchpad, RandomX_CurrentConfig.ProgramIterations);

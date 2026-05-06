@@ -16,7 +16,10 @@
 	mov rsi, rdx                ;# uint8_t* scratchpad
 
 	mov rax, rbp
-	ror rbp, 32
+	/* node-powhash local change start:
+	 * MO dataset-read snippets rotate ma/mx inside the copied read routine so
+	 * both v1 and v2 patched snippets can share the active dataset mask.
+	 * node-powhash local change end */
 
 	;# zero integer registers
 	xor r8, r8

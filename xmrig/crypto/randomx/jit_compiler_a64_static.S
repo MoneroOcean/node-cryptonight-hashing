@@ -45,6 +45,14 @@
 	.global DECL(randomx_program_aarch64_v1_FE_mix)
 	.global DECL(randomx_program_aarch64_v2_FE_mix_soft_aes)
 	.global DECL(randomx_program_aarch64_aes_lut_pointers)
+# node-powhash local change start:
+# The addon copies AArch64 JIT code from a shared object. Hide this lookup-table
+# label on ELF so copied snippets use direct local references instead of dynamic
+# symbol indirection.
+#if !defined(__APPLE__)
+	.hidden DECL(randomx_program_aarch64_aes_lut_pointers)
+#endif
+# node-powhash local change end
 	.global DECL(randomx_program_aarch64_vm_instructions_end_light)
 	.global DECL(randomx_program_aarch64_vm_instructions_end_light_tweak)
 	.global DECL(randomx_program_aarch64_light_cacheline_align_mask)

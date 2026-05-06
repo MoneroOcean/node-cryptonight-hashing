@@ -151,6 +151,14 @@ void *xmrig::VirtualMemory::allocateExecutableMemory(size_t size, bool hugePages
 
     if (hugePages) {
         mem = mmap(0, size, PROT_READ | PROT_WRITE | SECURE_PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS | MAP_ALIGNED_SUPER | MAP_PREFAULT_READ, -1, 0);
+        /* node-powhash local change start:
+         * The addon asks RandomX for executable huge pages first to keep JIT
+         * fast when the host supports it. If that mmap returns MAP_FAILED, we
+         * must retry normal executable pages instead of failing VM creation.
+         * node-powhash local change end */
+        if (mem == MAP_FAILED) {
+            mem = nullptr;
+        }
     }
 
     if (!mem) {
@@ -164,6 +172,14 @@ void *xmrig::VirtualMemory::allocateExecutableMemory(size_t size, bool hugePages
 
     if (hugePages) {
         mem = mmap(0, align(size), PROT_READ | PROT_WRITE | SECURE_PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE | hugePagesFlag(hugePageSize()), -1, 0);
+        /* node-powhash local change start:
+         * The addon asks RandomX for executable huge pages first to keep JIT
+         * fast when the host supports it. If that mmap returns MAP_FAILED, we
+         * must retry normal executable pages instead of failing VM creation.
+         * node-powhash local change end */
+        if (mem == MAP_FAILED) {
+            mem = nullptr;
+        }
     }
 
     if (!mem) {

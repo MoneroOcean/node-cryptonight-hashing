@@ -32,6 +32,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+/* node-powhash local change start:
+ * The addon passes xmrig::Algorithm into RandomX hashing so DefyX/Panthera can
+ * switch the initial hash function without pulling in the full xmrig miner API.
+ */
+#include "base/crypto/Algorithm.h"
+/* node-powhash local change end */
 #include "crypto/randomx/intrin_portable.h"
 
 #define RANDOMX_HASH_SIZE 32
@@ -67,22 +73,28 @@ struct RandomX_ConfigurationBase
 	// Common parameters for all RandomX variants
 	enum Params : uint64_t
 	{
-		ArgonMemory = 262144,
-		CacheAccesses = 8,
-		SuperscalarMaxLatency = 170,
-		DatasetBaseSize = 2147483648,
 		DatasetExtraSize = 33554368,
+		SuperscalarMaxLatency = 170,
 		JumpBits = 8,
 		JumpOffset = 8,
-		CacheLineAlignMask_Calculated = (DatasetBaseSize - 1) & ~(RANDOMX_DATASET_ITEM_SIZE - 1),
 		DatasetExtraItems_Calculated = DatasetExtraSize / RANDOMX_DATASET_ITEM_SIZE,
 		ConditionMask_Calculated = ((1 << JumpBits) - 1) << JumpOffset,
 	};
 
+	/* node-powhash local change start:
+	 * MoneroOcean RandomX variants use non-default cache access counts,
+	 * Argon memory, and dataset base sizes. Store these as runtime config
+	 * fields instead of upstream compile-time enum constants.
+	 */
+        uint32_t ArgonMemory;
+        uint32_t CacheAccesses;
+        uint32_t DatasetBaseSize;
+	/* node-powhash local change end */
+
 	uint32_t ArgonIterations;
 	uint32_t ArgonLanes;
 	const char* ArgonSalt;
-	uint32_t SuperscalarLatency;
+        uint32_t SuperscalarLatency;
 
 	uint32_t ScratchpadL1_Size;
 	uint32_t ScratchpadL2_Size;
@@ -130,9 +142,26 @@ struct RandomX_ConfigurationBase
 	uint32_t Tweak_V2_PREFETCH : 1;
 	uint32_t Tweak_V2_COMMITMENT : 1;
 
+	/* node-powhash local change start:
+	 * The x86 JIT emits copied dataset-read snippets. These buffers let the
+	 * addon patch those snippets for DefyX/Panthera's smaller dataset while
+	 * keeping upstream's v6.26 RandomX v2 JIT logic.
+	 */
+	uint8_t codeReadDatasetTweaked[64];
+	uint32_t codeReadDatasetTweakedSize;
+	uint8_t codeReadDatasetV2Tweaked[72];
+	uint32_t codeReadDatasetV2TweakedSize;
+	/* node-powhash local change end */
 	uint8_t codeSshPrefetchTweaked[20];
 	uint8_t codePrefetchScratchpadTweaked[28];
 	uint32_t codePrefetchScratchpadTweakedSize;
+
+	/* node-powhash local change start:
+	 * Cache-line masks depend on DatasetBaseSize for MO variants, so compute
+	 * and store the active value with the applied configuration.
+	 */
+        uint32_t CacheLineAlignMask_Calculated;
+	/* node-powhash local change end */
 
 	uint32_t AddressMask_Calculated[4];
 	uint32_t ScratchpadL3Mask_Calculated;
@@ -151,16 +180,30 @@ struct RandomX_ConfigurationMonero : public RandomX_ConfigurationBase {};
 struct RandomX_ConfigurationMoneroV2 : public RandomX_ConfigurationBase { RandomX_ConfigurationMoneroV2(); };
 struct RandomX_ConfigurationWownero : public RandomX_ConfigurationBase { RandomX_ConfigurationWownero(); };
 struct RandomX_ConfigurationArqma : public RandomX_ConfigurationBase { RandomX_ConfigurationArqma(); };
+/* node-powhash local change start:
+ * Keep the MO RandomX variants used by node-powhash string/numeric callers.
+ */
+struct RandomX_ConfigurationEquilibria : public RandomX_ConfigurationBase { RandomX_ConfigurationEquilibria(); };
 struct RandomX_ConfigurationGraft : public RandomX_ConfigurationBase { RandomX_ConfigurationGraft(); };
 struct RandomX_ConfigurationSafex : public RandomX_ConfigurationBase { RandomX_ConfigurationSafex(); };
+struct RandomX_ConfigurationKeva : public RandomX_ConfigurationBase { RandomX_ConfigurationKeva(); };
+struct RandomX_ConfigurationScala : public RandomX_ConfigurationBase { RandomX_ConfigurationScala(); };
+/* node-powhash local change end */
 struct RandomX_ConfigurationYada : public RandomX_ConfigurationBase { RandomX_ConfigurationYada(); };
 
 extern RandomX_ConfigurationMonero RandomX_MoneroConfig;
 extern RandomX_ConfigurationMoneroV2 RandomX_MoneroConfigV2;
 extern RandomX_ConfigurationWownero RandomX_WowneroConfig;
 extern RandomX_ConfigurationArqma RandomX_ArqmaConfig;
+/* node-powhash local change start:
+ * Expose the MO variant configs so multihashing.cc can select them.
+ */
+extern RandomX_ConfigurationEquilibria RandomX_EquilibriaConfig;
 extern RandomX_ConfigurationGraft RandomX_GraftConfig;
 extern RandomX_ConfigurationSafex RandomX_SafexConfig;
+extern RandomX_ConfigurationKeva RandomX_KevaConfig;
+extern RandomX_ConfigurationScala RandomX_ScalaConfig;
+/* node-powhash local change end */
 extern RandomX_ConfigurationYada RandomX_YadaConfig;
 
 extern RandomX_ConfigurationBase RandomX_CurrentConfig;
@@ -320,10 +363,15 @@ RANDOMX_EXPORT void randomx_destroy_vm(randomx_vm *machine);
  * @param output is a pointer to memory where the hash will be stored. Must not
  *        be NULL and at least RANDOMX_HASH_SIZE bytes must be available for writing.
 */
-RANDOMX_EXPORT void randomx_calculate_hash(randomx_vm *machine, const void *input, size_t inputSize, void *output);
+/* node-powhash local change start:
+ * The extra algo parameter selects the MO/Panthera initial hash while preserving
+ * legacy numeric callers in the addon wrapper.
+ */
+RANDOMX_EXPORT void randomx_calculate_hash(randomx_vm *machine, const void *input, size_t inputSize, void *output, const xmrig::Algorithm algo);
 
-RANDOMX_EXPORT void randomx_calculate_hash_first(randomx_vm* machine, uint64_t (&tempHash)[8], const void* input, size_t inputSize);
-RANDOMX_EXPORT void randomx_calculate_hash_next(randomx_vm* machine, uint64_t (&tempHash)[8], const void* nextInput, size_t nextInputSize, void* output);
+RANDOMX_EXPORT void randomx_calculate_hash_first(randomx_vm* machine, uint64_t (&tempHash)[8], const void* input, size_t inputSize, const xmrig::Algorithm algo);
+RANDOMX_EXPORT void randomx_calculate_hash_next(randomx_vm* machine, uint64_t (&tempHash)[8], const void* nextInput, size_t nextInputSize, void* output, const xmrig::Algorithm algo);
+/* node-powhash local change end */
 
 /**
  * Calculate a RandomX commitment from a RandomX hash and its input.

@@ -49,8 +49,32 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <cassert>
 
-#include "crypto/rx/Profiler.h"
-#include "base/net/stratum/Job.h"
+/* node-powhash local change start:
+ * DefyX/Panthera uses MoneroOcean's yespower + KangarooTwelve initial hash.
+ * Include only those Panthera headers here instead of vendoring xmrig's full
+ * algorithm dispatch stack into the addon.
+ */
+extern "C" {
+#include "crypto/randomx/panthera/yespower.h"
+#include "crypto/randomx/panthera/KangarooTwelve.h"
+}
+/* node-powhash local change end */
+
+/* node-powhash local change start:
+ * Upstream includes crypto/rx/Profiler.h; this addon has the profiler shim in
+ * base/tools, so use the local header while keeping PROFILE_SCOPE calls intact.
+ */
+#include "base/tools/Profiler.h"
+/* node-powhash local change end */
+
+/* node-powhash local change start:
+ * Upstream uses xmrig::Job::kMaxBlobSize for RandomX v2 commitments. The addon
+ * does not vendor the miner Job stack, so keep the same maximum locally.
+ */
+namespace {
+constexpr size_t kMaxBlobSize = 408;
+}
+/* node-powhash local change end */
 
 RandomX_ConfigurationMoneroV2::RandomX_ConfigurationMoneroV2()
 {
@@ -99,6 +123,20 @@ RandomX_ConfigurationArqma::RandomX_ConfigurationArqma()
 	ScratchpadL3_Size = 262144;
 }
 
+/* node-powhash local change start:
+ * MoneroOcean Equilibria RandomX variant retained for legacy numeric callers.
+ */
+RandomX_ConfigurationEquilibria::RandomX_ConfigurationEquilibria()
+{
+  ArgonIterations = 1;
+  ArgonSalt = "RandomXEQ\x01";
+  ProgramIterations = 1024;
+  ProgramCount = 4;
+  ScratchpadL2_Size = 131072;
+  ScratchpadL3_Size = 262144;
+}
+/* node-powhash local change end */
+
 RandomX_ConfigurationGraft::RandomX_ConfigurationGraft()
 {
 	ArgonLanes = 2;
@@ -113,6 +151,17 @@ RandomX_ConfigurationSafex::RandomX_ConfigurationSafex()
 	ArgonSalt = "RandomSFX\x01";
 }
 
+/* node-powhash local change start:
+ * MoneroOcean Keva RandomX variant retained for legacy numeric callers.
+ */
+RandomX_ConfigurationKeva::RandomX_ConfigurationKeva()
+{
+	ArgonSalt = "RandomKV\x01";
+	ScratchpadL2_Size = 131072;
+	ScratchpadL3_Size = 1048576;
+}
+/* node-powhash local change end */
+
 RandomX_ConfigurationYada::RandomX_ConfigurationYada()
 {
 	ArgonSalt = "RandomXYadaCoin\x03";
@@ -120,11 +169,42 @@ RandomX_ConfigurationYada::RandomX_ConfigurationYada()
 	ArgonIterations = 4;
 }
 
+/* node-powhash local change start:
+ * DefyX/Panthera configuration from MoneroOcean XMRig. It needs a smaller
+ * dataset/cache shape and pairs with rx_yespower_k12 below.
+ */
+RandomX_ConfigurationScala::RandomX_ConfigurationScala()
+{
+	ArgonMemory       = 131072;
+	ArgonIterations   = 2;
+	ArgonSalt         = "DefyXScala\x13";
+	CacheAccesses     = 2;
+	DatasetBaseSize   = 33554432;
+	ScratchpadL1_Size = 65536;
+	ScratchpadL2_Size = 131072;
+	ScratchpadL3_Size = 262144;
+	ProgramSize       = 64;
+	ProgramIterations = 1024;
+	ProgramCount      = 4;
+
+	RANDOMX_FREQ_IADD_RS = 25;
+	RANDOMX_FREQ_CBRANCH = 16;
+}
+/* node-powhash local change end */
+
 RandomX_ConfigurationBase::RandomX_ConfigurationBase()
-	: ArgonIterations(3)
+/* node-powhash local change start:
+ * Move upstream enum constants into the runtime config object so MO variants
+ * can change ArgonMemory, CacheAccesses, and DatasetBaseSize per algorithm.
+ */
+	: ArgonMemory(262144)
+	, CacheAccesses(8)
+	, DatasetBaseSize(2147483648)
+/* node-powhash local change end */
+	, ArgonIterations(3)
 	, ArgonLanes(1)
 	, ArgonSalt("RandomX\x03")
-	, SuperscalarLatency(170)
+        , SuperscalarLatency(170)
 	, ScratchpadL1_Size(16384)
 	, ScratchpadL2_Size(262144)
 	, ScratchpadL3_Size(2097152)
@@ -192,6 +272,23 @@ RandomX_ConfigurationBase::RandomX_ConfigurationBase()
 		const uint8_t* b = addr(randomx_sshash_end);
 		memcpy(codeSshPrefetchTweaked, a, b - a);
 	}
+	/* node-powhash local change start:
+	 * Keep mutable copies of the x86 dataset-read snippets so Apply() can
+	 * patch the dataset mask for DefyX/Panthera without rewriting the JIT.
+	 */
+	{
+		const uint8_t* a = addr(randomx_program_read_dataset);
+		const uint8_t* b = addr(randomx_program_read_dataset_v2);
+		memcpy(codeReadDatasetTweaked, a, b - a);
+		codeReadDatasetTweakedSize = b - a;
+	}
+	{
+		const uint8_t* a = addr(randomx_program_read_dataset_v2);
+		const uint8_t* b = addr(randomx_program_read_dataset_sshash_init);
+		memcpy(codeReadDatasetV2Tweaked, a, b - a);
+		codeReadDatasetV2TweakedSize = b - a;
+	}
+	/* node-powhash local change end */
 	if (xmrig::Cpu::info()->hasBMI2()) {
 		const uint8_t* a = addr(randomx_prefetch_scratchpad_bmi2);
 		const uint8_t* b = addr(randomx_prefetch_scratchpad_end);
@@ -230,14 +327,27 @@ void RandomX_ConfigurationBase::Apply()
 
 	ScratchpadL3Mask_Calculated = (((ScratchpadL3_Size / sizeof(uint64_t)) - 1) * 8);
 	ScratchpadL3Mask64_Calculated = ((ScratchpadL3_Size / sizeof(uint64_t)) / 8 - 1) * 64;
+	/* node-powhash local change start:
+	 * DatasetBaseSize is runtime-configurable for MO variants, so the cache
+	 * line align mask must be recalculated when a config is applied.
+	 */
+        CacheLineAlignMask_Calculated = (DatasetBaseSize - 1) & ~(RANDOMX_DATASET_ITEM_SIZE - 1);
+	/* node-powhash local change end */
 
 #if defined(XMRIG_FEATURE_ASM) && (defined(_M_X64) || defined(__x86_64__))
 	*(uint32_t*)(codeSshPrefetchTweaked + 3) = ArgonMemory * 16 - 1;
-	// Not needed right now because all variants use default dataset base size
-	//const uint32_t DatasetBaseMask = DatasetBaseSize - RANDOMX_DATASET_ITEM_SIZE;
-	//*(uint32_t*)(codeReadDatasetTweaked + 9) = DatasetBaseMask;
-	//*(uint32_t*)(codeReadDatasetTweaked + 24) = DatasetBaseMask;
-	//*(uint32_t*)(codeReadDatasetLightSshInitTweaked + 59) = DatasetBaseMask;
+	/* node-powhash local change start:
+	 * Patch the copied x86 dataset-read snippets with the active dataset mask.
+	 * This keeps rx/0 and rx/2 on upstream's fast path while allowing the MO
+	 * DefyX/Panthera dataset size to hash correctly.
+	 */
+	const uint32_t DatasetBaseMask = DatasetBaseSize - RANDOMX_DATASET_ITEM_SIZE;
+	*(uint32_t*)(codeReadDatasetV2Tweaked + 9) = DatasetBaseMask;
+	*(uint32_t*)(codeReadDatasetV2Tweaked + 24) = DatasetBaseMask;
+	*(uint32_t*)(codeReadDatasetTweaked + 7) = DatasetBaseMask;
+	*(uint32_t*)(codeReadDatasetTweaked + 23) = DatasetBaseMask;
+//	*(uint32_t*)(codeReadDatasetLightSshInitTweaked + 59) = DatasetBaseMask;
+	/* node-powhash local change end */
 
 	const bool hasBMI2 = xmrig::Cpu::info()->hasBMI2();
 
@@ -385,13 +495,33 @@ RandomX_ConfigurationMonero RandomX_MoneroConfig;
 RandomX_ConfigurationMoneroV2 RandomX_MoneroConfigV2;
 RandomX_ConfigurationWownero RandomX_WowneroConfig;
 RandomX_ConfigurationArqma RandomX_ArqmaConfig;
+/* node-powhash local change start:
+ * Global configs for MO algorithms selected by multihashing.cc.
+ */
+RandomX_ConfigurationEquilibria RandomX_EquilibriaConfig;
 RandomX_ConfigurationGraft RandomX_GraftConfig;
 RandomX_ConfigurationSafex RandomX_SafexConfig;
+RandomX_ConfigurationKeva RandomX_KevaConfig;
+RandomX_ConfigurationScala RandomX_ScalaConfig;
+/* node-powhash local change end */
 RandomX_ConfigurationYada RandomX_YadaConfig;
 
 alignas(64) RandomX_ConfigurationBase RandomX_CurrentConfig;
 
 static std::mutex vm_pool_mutex;
+
+/* node-powhash local change start:
+ * DefyX/Panthera replaces the normal Blake2b initial hash with the MO
+ * yespower + KangarooTwelve chain. Keep it local to the addon RandomX layer.
+ */
+int rx_yespower_k12(void *out, size_t outlen, const void *in, size_t inlen)
+{
+	rx_blake2b_wrapper::run(out, outlen, in, inlen);
+	yespower_params_t params = { YESPOWER_1_0, 2048, 8, NULL };
+	if (yespower_tls((const uint8_t *)out, outlen, &params, (yespower_binary_t *)out)) return -1;
+	return KangarooTwelve((const unsigned char *)out, outlen, (unsigned char *)out, 32, 0, 0);
+}
+/* node-powhash local change end */
 
 extern "C" {
 
@@ -594,12 +724,20 @@ extern "C" {
 		vm->~randomx_vm();
 	}
 
-	void randomx_calculate_hash(randomx_vm *machine, const void *input, size_t inputSize, void *output) {
+	void randomx_calculate_hash(randomx_vm *machine, const void *input, size_t inputSize, void *output, const xmrig::Algorithm algo) {
 		assert(machine != nullptr);
 		assert(inputSize == 0 || input != nullptr);
 		assert(output != nullptr);
 		alignas(16) uint64_t tempHash[8];
-		rx_blake2b_wrapper::run(tempHash, sizeof(tempHash), input, inputSize);
+		/* node-powhash local change start:
+		 * Select the MO/Panthera initial hash for RX_XLA; all upstream RandomX
+		 * algorithms continue to use Blake2b.
+		 */
+                switch (algo) {
+                    case xmrig::Algorithm::RX_XLA:   rx_yespower_k12(tempHash, sizeof(tempHash), input, inputSize); break;
+		    default: rx_blake2b_wrapper::run(tempHash, sizeof(tempHash), input, inputSize);
+		}
+		/* node-powhash local change end */
 		machine->initScratchpad(&tempHash);
 		machine->resetRoundingMode();
 		for (uint32_t chain = 0; chain < RandomX_CurrentConfig.ProgramCount - 1; ++chain) {
@@ -610,12 +748,19 @@ extern "C" {
 		machine->getFinalResult(output);
 	}
 
-	void randomx_calculate_hash_first(randomx_vm* machine, uint64_t (&tempHash)[8], const void* input, size_t inputSize) {
-		rx_blake2b_wrapper::run(tempHash, sizeof(tempHash), input, inputSize);
+	void randomx_calculate_hash_first(randomx_vm* machine, uint64_t (&tempHash)[8], const void* input, size_t inputSize, const xmrig::Algorithm algo) {
+		/* node-powhash local change start:
+		 * Select the MO/Panthera initial hash for RX_XLA in batched hashing.
+		 */
+                switch (algo) {
+                    case xmrig::Algorithm::RX_XLA:   rx_yespower_k12(tempHash, sizeof(tempHash), input, inputSize); break;
+		    default: rx_blake2b_wrapper::run(tempHash, sizeof(tempHash), input, inputSize);
+		}
+		/* node-powhash local change end */
 		machine->initScratchpad(tempHash);
 	}
 
-	void randomx_calculate_hash_next(randomx_vm* machine, uint64_t (&tempHash)[8], const void* nextInput, size_t nextInputSize, void* output) {
+	void randomx_calculate_hash_next(randomx_vm* machine, uint64_t (&tempHash)[8], const void* nextInput, size_t nextInputSize, void* output, const xmrig::Algorithm algo) {
 		PROFILE_SCOPE(RandomX_hash);
 
 		machine->resetRoundingMode();
@@ -626,12 +771,24 @@ extern "C" {
 		machine->run(&tempHash);
 
 		// Finish current hash and fill the scratchpad for the next hash at the same time
-		rx_blake2b_wrapper::run(tempHash, sizeof(tempHash), nextInput, nextInputSize);
+		/* node-powhash local change start:
+		 * Select the MO/Panthera initial hash for RX_XLA in batched hashing.
+		 */
+                switch (algo) {
+                    case xmrig::Algorithm::RX_XLA:   rx_yespower_k12(tempHash, sizeof(tempHash), nextInput, nextInputSize); break;
+		    default: rx_blake2b_wrapper::run(tempHash, sizeof(tempHash), nextInput, nextInputSize);
+		}
+		/* node-powhash local change end */
 		machine->hashAndFill(output, tempHash);
 	}
 
 	void randomx_calculate_commitment(const void* input, size_t inputSize, const void* hash_in, void* com_out) {
-		uint8_t buf[xmrig::Job::kMaxBlobSize + RANDOMX_HASH_SIZE];
+		/* node-powhash local change start:
+		 * Use the local max blob size because the addon does not vendor
+		 * xmrig::Job, where upstream stores this constant.
+		 */
+		uint8_t buf[kMaxBlobSize + RANDOMX_HASH_SIZE];
+		/* node-powhash local change end */
 		memcpy(buf, input, inputSize);
 		memcpy(buf + inputSize, hash_in, RANDOMX_HASH_SIZE);
 		rx_blake2b_wrapper::run(com_out, RANDOMX_HASH_SIZE, buf, inputSize + RANDOMX_HASH_SIZE);
