@@ -63,7 +63,8 @@ Exact argument patterns and vector-backed examples live in [`tests/stability.js`
 | `argon2(data, algo?)` | `Buffer` | Argon2 family helpers. |
 | `astrobwt(data, algo?)` | `Buffer` | AstroBWT family helpers. |
 | `k12(data)` | `Buffer` | KangarooTwelve helper. |
-| `kawpow(headerHash32, nonce8, mixHash32)` | `Buffer` | Returns the 32-byte KAWPOW result buffer. |
+| `kawpow(headerHash32, nonce8, mixHash32)` | `Buffer` | Returns the 32-byte KAWPOW result buffer using a supplied mixhash. |
+| `kawpow_light(headerHash32, nonce8, height)` | `[Buffer, Buffer]` | Returns the 32-byte KAWPOW result buffer and computed mixhash buffer from the light cache. |
 | `ethash(headerHash32, nonce8, height)` | `[Buffer, Buffer]` | Returns `[result, mixHash]`. |
 | `etchash(headerHash32, nonce8, height)` | `[Buffer, Buffer]` | Returns `[result, mixHash]`. |
 | `autolykos2_hashes(coinbaseBuffer, height)` | `[Buffer, Buffer]` | JS helper that returns `[hash, blake2b(hash)]`. |

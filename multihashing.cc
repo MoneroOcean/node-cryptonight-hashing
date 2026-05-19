@@ -26,6 +26,7 @@
 #include "crypto/randomx/randomx.h"
 #include "crypto/astrobwt/AstroBWT.h"
 #include "crypto/kawpow/KPHash.h"
+#include "crypto/kawpow/KPCache.h"
 #include "3rdparty/libethash/ethash.h"
 #include "crypto/ghostrider/ghostrider.h"
 #include "crypto/flex/flex.h"
@@ -868,6 +869,44 @@ NAN_METHOD(kawpow) {
 	info.GetReturnValue().Set(returnValue);
 }
 
+NAN_METHOD(kawpow_light) {
+	if (info.Length() != 3) return THROW_ERROR_EXCEPTION("You must provide 3 arguments: header hash (32 bytes), nonce (8 bytes), height (integer)");
+
+	v8::Isolate *isolate = v8::Isolate::GetCurrent();
+
+	Local<Object> header_hash_buff = info[0]->ToObject(isolate->GetCurrentContext()).ToLocalChecked();
+	if (!Buffer::HasInstance(header_hash_buff)) return THROW_ERROR_EXCEPTION("Argument 1 should be a buffer object.");
+	if (Buffer::Length(header_hash_buff) != 32) return THROW_ERROR_EXCEPTION("Argument 1 should be a 32 bytes long buffer object.");
+
+	Local<Object> nonce_buff = info[1]->ToObject(isolate->GetCurrentContext()).ToLocalChecked();
+	if (!Buffer::HasInstance(nonce_buff)) return THROW_ERROR_EXCEPTION("Argument 2 should be a buffer object.");
+	if (Buffer::Length(nonce_buff) != 8) return THROW_ERROR_EXCEPTION("Argument 2 should be a 8 bytes long buffer object.");
+
+	if (!info[2]->IsUint32()) return THROW_ERROR_EXCEPTION("Argument 3 should be an unsigned 32-bit integer");
+	const uint32_t height = Nan::To<uint32_t>(info[2]).FromMaybe(0);
+	const uint32_t epoch = height / 7500;
+
+	uint8_t header_hash[32];
+	memcpy(header_hash, reinterpret_cast<const uint8_t*>(Buffer::Data(header_hash_buff)), sizeof(header_hash));
+	const uint64_t nonce = __builtin_bswap64(*(reinterpret_cast<const uint64_t*>(Buffer::Data(nonce_buff))));
+
+	uint32_t output[8];
+	uint32_t mix_hash[8];
+
+	{
+		std::lock_guard<std::mutex> lock(xmrig::KPCache::s_cacheMutex);
+		if (!xmrig::KPCache::s_cache.init(epoch)) {
+			return THROW_ERROR_EXCEPTION("Unable to initialize KawPoW light cache for height");
+		}
+		xmrig::KPHash::calculate(xmrig::KPCache::s_cache, height, header_hash, nonce, output, mix_hash);
+	}
+
+	v8::Local<v8::Array> returnValue = v8::Array::New(isolate, 2);
+	SetArrayValue(isolate, returnValue, 0, Nan::CopyBuffer((char*)output, 32).ToLocalChecked());
+	SetArrayValue(isolate, returnValue, 1, Nan::CopyBuffer((char*)mix_hash, 32).ToLocalChecked());
+	info.GetReturnValue().Set(returnValue);
+}
+
 NAN_METHOD(ethash) {
 	if (info.Length() != 3) return THROW_ERROR_EXCEPTION("You must provide 3 arguments: header hash (32 bytes), nonce (8 bytes), height (integer)");
 
@@ -976,6 +1015,7 @@ void init(v8::Local<v8::Object> exports, v8::Local<v8::Value>,
     SetExport(isolate, exports, "c29b_packed_edges", c29b_packed_edges);
     SetExport(isolate, exports, "c29i_packed_edges", c29i_packed_edges);
     SetExport(isolate, exports, "kawpow", kawpow);
+    SetExport(isolate, exports, "kawpow_light", kawpow_light);
     SetExport(isolate, exports, "ethash", ethash);
     SetExport(isolate, exports, "etchash", etchash);
 }

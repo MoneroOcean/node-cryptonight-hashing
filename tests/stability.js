@@ -279,6 +279,50 @@ const baseActiveCases = [
             )
             .toString("hex"),
       },
+      {
+        expected: "true",
+        actual: () => {
+          const header = Buffer.from(
+            "63543d3913fe56e6720c5e61e8d208d05582875822628f483279a3e8d9c9a8b3",
+            "hex"
+          );
+          const nonce = Buffer.from("88a23b0033eb959b", "hex");
+          const [resultHash, mixHash] = multiHashing.kawpow_light(header, nonce, 0);
+          const verifiedHash = multiHashing.kawpow(header, nonce, mixHash);
+
+          return String(
+            Buffer.isBuffer(resultHash) &&
+              resultHash.length === 32 &&
+              Buffer.isBuffer(mixHash) &&
+              mixHash.length === 32 &&
+              resultHash.equals(verifiedHash)
+          );
+        },
+      },
+      {
+        expected: "true",
+        actual: () => {
+          const header = Buffer.alloc(32);
+          const nonce = Buffer.alloc(8);
+          const invalidCalls = [
+            () => multiHashing.kawpow_light(Buffer.alloc(31), nonce, 0),
+            () => multiHashing.kawpow_light(header, Buffer.alloc(7), 0),
+            () => multiHashing.kawpow_light(header, nonce, -1),
+            () => multiHashing.kawpow_light(header, nonce, 1.5),
+          ];
+
+          return String(
+            invalidCalls.every((call) => {
+              try {
+                call();
+                return false;
+              } catch {
+                return true;
+              }
+            })
+          );
+        },
+      },
     ],
   }),
   checkCase({
