@@ -30,7 +30,8 @@
     "url": "https://github.com/MoneroOcean/node-powhash/issues"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.9.0",
+    "npm": ">=11.10.0"
   },
   "os": [
     "linux",
