@@ -24,15 +24,9 @@ jobs:
       matrix:
         include:
           - os: ubuntu-24.04
-            node: 18
-          - os: ubuntu-24.04
             node: 24
           - os: ubuntu-latest
-            node: system
-          - os: ubuntu-latest
             node: 24
-          - os: macos-latest
-            node: system
           - os: macos-latest
             node: 24
 
@@ -41,11 +35,13 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Setup Node.js
-        if: matrix.node != 'system'
         uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
           package-manager-cache: false
+
+      - name: Setup npm
+        run: npm install -g npm@11.10.0
 
       - name: Show Node.js version
         run: node -v
